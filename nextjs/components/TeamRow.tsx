@@ -1,6 +1,11 @@
 "use client";
 
-export function TeamRow({ team }) {
+interface Team {
+  id: string;
+  display_name: string;
+}
+
+export function TeamRow({ team }: { team: Team }) {
   return (
     <tr
       className="border-b border-gray-300 hover:bg-gray-100 cursor-pointer"

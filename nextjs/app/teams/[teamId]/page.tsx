@@ -136,7 +136,7 @@ export default async function TeamPage({ params }: TeamPageProps) {
   const rushYpg = numGames ? totalRushYards / numGames : 0;
 
   function getTeamName(abbr: string) {
-    return allTeams?.find((t: Team) => t.id === abbr)?.display_name || abbr;
+    return allTeams?.find((t) => t.id === abbr)?.display_name || abbr;
   }
 
   const displayName =

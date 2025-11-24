@@ -1,11 +1,20 @@
 "use client";
 
-interface Team {
-  id: string;
-  display_name: string;
-}
+type TeamRowData = {
+  team_id: string;
+  games: number;
+  points_per_game: number;
+  yards_per_game: number;
+  passing_yards_per_game: number;
+  rushing_yards_per_game: number;
+  yards_per_play_avg: number;
+  third_down_eff_avg: number;
+  fourth_down_eff_avg: number;
+  turnovers_per_game: number;
+  sacks_per_game: number;
+};
 
-export function TeamRow({ team }: { team: Team }) {
+export function TeamRow({ team }: { team: TeamRowData }) {
   return (
     <tr
       className="border-b border-gray-300 hover:bg-gray-100 cursor-pointer"

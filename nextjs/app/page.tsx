@@ -120,4 +120,30 @@ export default async function HomePage() {
                         {row.team.logo && (
                           <img
                             src={row.team.logo}
-                            className="w-6
+                            className="w-6 h-6 rounded"
+                            alt={row.team.display_name}
+                          />
+                        )}
+                        {row.team.display_name}
+                      </div>
+                    </Link>
+                  </td>
+                  <td className="p-3 text-right">{row.gamesPlayed}</td>
+                  <td className="p-3 text-right">{row.pointsFor}</td>
+                  <td className="p-3 text-right">{row.pointsAllowed}</td>
+                  <td className="p-3 text-right">{row.totalYards}</td>
+                  <td className="p-3 text-right">{row.passingYards}</td>
+                  <td className="p-3 text-right">{row.rushingYards}</td>
+                  <td className="p-3 text-right">{row.turnovers}</td>
+                  <td className="p-3 text-right">
+                    {row.record.wins}-{row.record.losses}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}

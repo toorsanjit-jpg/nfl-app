@@ -37,7 +37,7 @@ export default async function HomePage() {
     };
   }
 
-  // Merge stats from team_game_stats + games table
+  // Merge team stats and scores
   for (const game of games) {
     const home = game.home_team_id;
     const away = game.away_team_id;
@@ -81,58 +81,43 @@ export default async function HomePage() {
   const rows = Object.values(totals);
 
   return (
-    <div className="p-10">
-      <h1 className="text-3xl font-bold mb-6">NFL Team Dashboard</h1>
+    <div className="p-6 sm:p-10">
+      {/* Page Header */}
+      <div className="mb-8">
+        <h1 className="text-4xl font-bold tracking-tight">NFL Team Dashboard</h1>
+        <p className="text-gray-600 mt-1">
+          Live team performance summary powered by your Supabase + ESPN data.
+        </p>
+      </div>
 
-      <table className="min-w-full border text-sm">
-        <thead className="bg-gray-100">
-          <tr>
-            <th className="p-3 text-left">Team</th>
-            <th className="p-3 text-right">GP</th>
-            <th className="p-3 text-right">PF</th>
-            <th className="p-3 text-right">PA</th>
-            <th className="p-3 text-right">Yards</th>
-            <th className="p-3 text-right">Pass</th>
-            <th className="p-3 text-right">Rush</th>
-            <th className="p-3 text-right">TO</th>
-            <th className="p-3 text-right">Record</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row: any) => (
-            <tr
-              key={row.team.id}
-              className="border-b hover:bg-gray-50 transition cursor-pointer"
-            >
-              <td className="p-3">
-                <Link href={`/teams/${row.team.id}`}>
-                  <div className="flex items-center gap-2">
-                    {row.team.logo && (
-                      <img
-                        src={row.team.logo}
-                        className="w-6 h-6 rounded"
-                        alt={row.team.display_name}
-                      />
-                    )}
-                    {row.team.display_name}
-                  </div>
-                </Link>
-              </td>
+      {/* Card Container */}
+      <div className="bg-white shadow-sm rounded-xl border border-gray-200 p-6">
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm hs-table">
+            <thead className="bg-gray-50 border-b">
+              <tr className="text-gray-700">
+                <th className="p-3 text-left font-medium">Team</th>
+                <th className="p-3 text-right font-medium">GP</th>
+                <th className="p-3 text-right font-medium">PF</th>
+                <th className="p-3 text-right font-medium">PA</th>
+                <th className="p-3 text-right font-medium">Yards</th>
+                <th className="p-3 text-right font-medium">Pass</th>
+                <th className="p-3 text-right font-medium">Rush</th>
+                <th className="p-3 text-right font-medium">TO</th>
+                <th className="p-3 text-right font-medium">Record</th>
+              </tr>
+            </thead>
 
-              <td className="p-3 text-right">{row.gamesPlayed}</td>
-              <td className="p-3 text-right">{row.pointsFor}</td>
-              <td className="p-3 text-right">{row.pointsAllowed}</td>
-              <td className="p-3 text-right">{row.totalYards}</td>
-              <td className="p-3 text-right">{row.passingYards}</td>
-              <td className="p-3 text-right">{row.rushingYards}</td>
-              <td className="p-3 text-right">{row.turnovers}</td>
-              <td className="p-3 text-right">
-                {row.record.wins}-{row.record.losses}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
+            <tbody className="divide-y divide-gray-200">
+              {rows.map((row: any) => (
+                <tr
+                  key={row.team.id}
+                  className="hover:bg-gray-50 transition cursor-pointer"
+                >
+                  <td className="p-3">
+                    <Link href={`/teams/${row.team.id}`}>
+                      <div className="flex items-center gap-2">
+                        {row.team.logo && (
+                          <img
+                            src={row.team.logo}
+                            className="w-6

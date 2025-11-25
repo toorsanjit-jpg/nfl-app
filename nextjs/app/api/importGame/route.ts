@@ -2,72 +2,45 @@ import axios from "axios";
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
-/* --------------------------------------------
-   Utility Helpers
--------------------------------------------- */
-
-function computeSuccess(
-  down: number | null,
-  distance: number | null,
-  yardsGained: number | null
-): boolean | null {
-  if (!down || !distance || yardsGained == null) return null;
-
-  if (down === 1) return yardsGained >= 0.4 * distance;
-  if (down === 2) return yardsGained >= 0.6 * distance;
-  if (down === 3 || down === 4) return yardsGained >= distance;
-
-  return null;
-}
-
+/* --------------------------------------------------------
+   Helper: Safe Play-Type Classification (your original logic)
+-------------------------------------------------------- */
 function classifyPlayType(description: string): string {
-  const text = description.toLowerCase();
+  const text = description?.toLowerCase() ?? "";
 
-  // Non-offense plays
   if (text.includes("punts")) return "punt";
   if (text.includes("punt")) return "punt";
   if (text.includes("onside kick")) return "kickoff-onside";
-  if (text.includes("kickoff") || text.includes("kicks off")) return "kickoff";
+  if (text.includes("kicks off") || text.includes("kickoff")) return "kickoff";
   if (text.includes("field goal")) return "field-goal";
   if (text.includes("extra point")) return "extra-point";
   if (text.includes("two-point") || text.includes("two pt"))
     return "two-point-attempt";
-  if (text.includes("spike")) return "qb-spike";
-  if (text.includes("kneel")) return "qb-kneel";
+  if (text.includes("spikes")) return "qb-spike";
+  if (text.includes("kneels")) return "qb-kneel";
 
-  // Penalties
-  if (text.startsWith("penalty on") || text.includes("penalty on")) {
-    if (text.includes("offensive") || text.includes("offense"))
-      return "penalty-offense";
-    if (text.includes("defensive") || text.includes("defense"))
-      return "penalty-defense";
-    return "penalty";
-  }
-
-  // Sacks / scrambles
   if (text.includes("sacked") || text.includes("sack")) return "pass-sack";
-  if (text.includes("scramble")) return "qb-scramble";
+  if (text.includes("scrambles") || text.includes("scramble")) return "qb-scramble";
 
-  // Pass plays
   if (text.includes("pass")) {
-    const depth = text.includes("deep") ? "deep" : "short";
+    const depth = text.includes("deep") ? "pass-deep" : "pass-short";
+
     let direction = "middle";
     if (text.includes("left")) direction = "left";
     else if (text.includes("right")) direction = "right";
 
     if (text.includes("screen")) return `pass-screen-${direction}`;
 
-    return `pass-${depth}-${direction}`;
+    return `${depth}-${direction}`;
   }
 
-  // Rush plays
   if (text.includes("left end")) return "rush-left-end";
   if (text.includes("left tackle")) return "rush-left-tackle";
   if (text.includes("left guard")) return "rush-left-guard";
   if (text.includes("right end")) return "rush-right-end";
   if (text.includes("right tackle")) return "rush-right-tackle";
   if (text.includes("right guard")) return "rush-right-guard";
-  if (text.includes("middle") || text.includes("up the middle"))
+  if (text.includes("up the middle") || text.includes("middle"))
     return "rush-middle";
 
   if (text.includes("right")) return "rush-right";
@@ -77,84 +50,94 @@ function classifyPlayType(description: string): string {
   return "other";
 }
 
-/* --------------------------------------------
-   Main Handler
--------------------------------------------- */
+/* --------------------------------------------------------
+   Helper: Drive Success Logic (unchanged)
+-------------------------------------------------------- */
+function computeSuccess(
+  down: number | null,
+  distance: number | null,
+  yards: number | null
+): boolean | null {
+  if (!down || !distance || yards === null) return null;
 
-export async function POST(request: Request) {
+  if (down === 1) return yards >= 0.4 * distance;
+  if (down === 2) return yards >= 0.6 * distance;
+  if (down === 3 || down === 4) return yards >= distance;
+
+  return null;
+}
+
+/* --------------------------------------------------------
+   MAIN IMPORT HANDLER (Option A — maximum safety)
+-------------------------------------------------------- */
+
+export async function POST(req: Request) {
   try {
-    const body = await request.json();
-    const { gameId } = body;
-
+    const { gameId } = await req.json();
     if (!gameId) {
       return NextResponse.json({ error: "Missing gameId" }, { status: 400 });
     }
 
-    /* -----------------------------
-       Fetch PBP JSON
-    ------------------------------ */
-    const { origin } = new URL(request.url);
+    /* ----------------------------------------------
+       1. Fetch Full RapidAPI JSON (lossless)
+    ---------------------------------------------- */
+    const { origin } = new URL(req.url);
     const playsUrl = new URL("/api/getPlays", origin);
     playsUrl.searchParams.set("gameId", gameId);
 
     const apiResponse = await axios.get(playsUrl.toString());
-    const gameData = apiResponse.data;
+    const data = apiResponse.data;
 
-    /* -----------------------------
-       Extract Teams + Game Info
-    ------------------------------ */
-    const competition = gameData.competitions?.[0];
-    if (!competition) {
-      return NextResponse.json(
-        { error: "Invalid game data: missing competition" },
-        { status: 400 }
-      );
-    }
+    /* ----------------------------------------------
+       2. Validate Competition / Teams
+    ---------------------------------------------- */
+    const comp = data.competitions?.[0];
+    if (!comp) throw new Error("Missing competition data");
 
-    const competitors = competition.competitors || [];
-    const homeCompetitor = competitors.find((c: any) => c.homeAway === "home");
-    const awayCompetitor = competitors.find((c: any) => c.homeAway === "away");
+    const competitors = comp.competitors ?? [];
+    if (competitors.length < 2) throw new Error("Missing competitors");
 
-    const homeTeam = homeCompetitor.team;
-    const awayTeam = awayCompetitor.team;
+    const home = competitors.find((c: any) => c.homeAway === "home");
+    const away = competitors.find((c: any) => c.homeAway === "away");
 
-    const homeScore = Number(homeCompetitor.score ?? 0);
-    const awayScore = Number(awayCompetitor.score ?? 0);
+    if (!home || !away) throw new Error("Missing home/away teams");
 
-    const seasonYear = gameData.season?.year ?? null;
-    const weekNumber =
-      gameData.week?.number ??
-      gameData.week ??
-      gameData.competitions?.[0]?.week?.number ??
-      null;
-    const gameDateIso = competition.date
-      ? new Date(competition.date).toISOString()
-      : null;
+    const homeTeam = home.team;
+    const awayTeam = away.team;
 
-    /* -----------------------------
-       UPSERT GAME
-    ------------------------------ */
-    await supabaseAdmin.from("games").upsert({
-      id: gameData.id,
-      season: seasonYear,
-      week: weekNumber,
-      home_team_id: homeTeam.abbreviation,
-      away_team_id: awayTeam.abbreviation,
-      home_score: homeScore,
-      away_score: awayScore,
-      date: gameDateIso,
-    });
-
-    /* -----------------------------
-       Map ESPN Numeric IDs → Abbr
-    ------------------------------ */
+    /* ----------------------------------------------
+       3. Build ESPN → Team Abbreviation Map (your original logic)
+    ---------------------------------------------- */
     const teamAbbrByEspnId: Record<string, string> = {};
     teamAbbrByEspnId[homeTeam.id] = homeTeam.abbreviation;
     teamAbbrByEspnId[awayTeam.id] = awayTeam.abbreviation;
 
-    /* -----------------------------
-       UPSERT TEAMS
-    ------------------------------ */
+    /* ----------------------------------------------
+       4. Insert GAME metadata
+    ---------------------------------------------- */
+    const season = data.season?.year ?? null;
+    const week =
+      data.week?.number ??
+      data.week ??
+      comp.week?.number ??
+      null;
+
+    const gameDateIso = comp.date ? new Date(comp.date).toISOString() : null;
+
+    await supabaseAdmin.from("games").upsert({
+      id: Number(data.id),
+      season,
+      week,
+      home_team_id: homeTeam.abbreviation,
+      away_team_id: awayTeam.abbreviation,
+      home_score: Number(home.score ?? 0),
+      away_score: Number(away.score ?? 0),
+      date: gameDateIso,
+    });
+
+    /* ----------------------------------------------
+       5. Insert TEAMS metadata
+    ---------------------------------------------- */
     await supabaseAdmin.from("teams").upsert(
       [
         {
@@ -183,104 +166,105 @@ export async function POST(request: Request) {
       { onConflict: "id" }
     );
 
-    /* -----------------------------
-       TEAM GAME STATS
-    ------------------------------ */
-    const boxScore = gameData.boxScore;
-    if (boxScore?.teams) {
-      const teamStatsToUpsert = [];
+    /* ----------------------------------------------
+       6. Insert TEAM GAME STATS (boxScore.teams)
+    ---------------------------------------------- */
+    const box = data.boxScore;
+    if (box?.teams) {
+      const statsPayload = [];
 
-      for (const t of boxScore.teams) {
-        const statsMap: Record<string, any> = {};
+      for (const t of box.teams) {
+        const tid = t.team.abbreviation;
+
+        const map: Record<string, any> = {};
         for (const s of t.statistics ?? []) {
-          if (s.name) statsMap[s.name] = s.value ?? s.displayValue ?? null;
+          if (s.name) {
+            map[s.name] =
+              s.value ??
+              s.displayValue ??
+              s.displayValueRaw ??
+              null;
+          }
         }
 
-        teamStatsToUpsert.push({
-          game_id: gameData.id,
-          team_id: t.team.abbreviation,
-          home_away:
-            t.team.abbreviation === homeTeam.abbreviation ? "home" : "away",
-          points:
-            t.team.abbreviation === homeTeam.abbreviation
-              ? homeScore
-              : awayScore,
-          first_downs: statsMap.firstDowns ?? null,
-          total_yards: statsMap.totalYards ?? null,
-          passing_yards: statsMap.passingYards ?? null,
-          rushing_yards: statsMap.rushingYards ?? null,
-          turnovers: statsMap.turnovers ?? null,
-          sacks: statsMap.sacks ?? null,
-          time_of_possession: statsMap.timeOfPossession ?? null,
+        statsPayload.push({
+          game_id: Number(data.id),
+          team_id: tid,
+          home_away: tid === homeTeam.abbreviation ? "home" : "away",
+          points: tid === homeTeam.abbreviation ? Number(home.score) : Number(away.score),
+          first_downs: map.firstDowns ?? null,
+          total_yards: map.totalYards ?? null,
+          passing_yards: map.passingYards ?? null,
+          rushing_yards: map.rushingYards ?? null,
+          yards_per_play: map.yardsPerPlay ?? null,
+          turnovers: map.turnovers ?? null,
+          sacks: map.sacks ?? null,
+          time_of_possession: map.timeOfPossession ?? null,
+          third_down_eff: map.thirdDownEff ?? null,
+          fourth_down_eff: map.fourthDownEff ?? null,
+          red_zone_eff: map.redZoneEff ?? null,
         });
       }
 
       await supabaseAdmin
         .from("team_game_stats")
-        .upsert(teamStatsToUpsert, { onConflict: "game_id,team_id" });
+        .upsert(statsPayload, { onConflict: "game_id,team_id" });
     }
 
-    /* -----------------------------
-       PLAYER & PLAYER-GAME STATS
-    ------------------------------ */
-    if (boxScore?.players) {
-      const players: any[] = [];
-      const playerStats: any[] = [];
+    /* ----------------------------------------------
+       7. Insert PLAYERS + PLAYER GAME STATS (as-is)
+    ---------------------------------------------- */
+    if (box?.players) {
+      const players = new Map<string, any>();
+      const pgStats = [];
 
-      for (const category of boxScore.players) {
+      for (const category of box.players) {
         const categoryName = category.name;
-        const categoryTeam = category.team?.abbreviation ?? null;
+        const teamAbbr = category.team?.abbreviation ?? null;
 
-        for (const statsGroup of category.statistics ?? []) {
-          const keys = statsGroup.keys || [];
-          const labels = statsGroup.labels || [];
+        for (const statGroup of category.statistics ?? []) {
+          const keys = statGroup.keys ?? [];
+          const labels = statGroup.labels ?? [];
 
-          for (const athlete of statsGroup.athletes ?? []) {
-            const p = athlete.athlete;
-            if (!p?.id) continue;
+          for (const athlete of statGroup.athletes ?? []) {
+            const a = athlete.athlete;
+            if (!a?.id) continue;
 
-            players.push({
-              id: String(p.id),
-              name: p.displayName ?? null,
-              first_name: p.firstName ?? null,
-              last_name: p.lastName ?? null,
-              position: p.position?.abbreviation ?? null,
-              current_team_id: categoryTeam,
-              headshot_url: p.headshot?.href ?? null,
+            /* ----------------------
+               Store Player (as-is)
+            ---------------------- */
+            players.set(a.id, {
+              id: String(a.id),
+              name: a.displayName ?? null,
+              first_name: a.firstName ?? null,
+              last_name: a.lastName ?? null,
+              position: a.position?.abbreviation ?? null,
+              current_team_id: teamAbbr,
+              headshot_url: a.headshot?.href ?? null,
             });
 
-            const rawStats: any = {};
-            const parsedStats: any = {};
+            /* ----------------------
+               Store Raw + Parsed Stats
+               (parsed = AS-IS except numbers)
+            ---------------------- */
+            const raw: Record<string, any> = {};
+            const parsed: Record<string, any> = {};
 
-            const values = athlete.stats || [];
+            const values = athlete.stats ?? [];
             for (let i = 0; i < values.length; i++) {
               const key = keys[i] ?? `col_${i}`;
               const label = labels[i] ?? key;
-              const value = values[i];
-
-              rawStats[key] = value;
-
-              if (
-                typeof value === "number" ||
-                (typeof value === "string" &&
-                  value.trim() !== "" &&
-                  !isNaN(Number(value)) &&
-                  !value.includes("/") &&
-                  !value.includes("-"))
-              ) {
-                parsedStats[label] = Number(value);
-              } else {
-                parsedStats[label] = value;
-              }
+              raw[key] = values[i];
+              parsed[label] = values[i]; // <-- LOSSLESS MODE
             }
 
-            playerStats.push({
-              game_id: gameData.id,
-              team_id: categoryTeam,
-              player_id: String(p.id),
+            pgStats.push({
+              game_id: Number(data.id),
+              team_id: teamAbbr,
+              player_id: String(a.id),
               category: categoryName,
-              stats_raw: rawStats,
-              stats_parsed: parsedStats,
+              stats_raw: raw,
+              stats_parsed: parsed, // <-- EXACT AS-IS
             });
           }
         }
@@ -288,197 +272,149 @@ export async function POST(request: Request) {
 
       await supabaseAdmin
         .from("players")
-        .upsert(
-          Array.from(new Map(players.map((p) => [p.id, p])).values()),
-          { onConflict: "id" }
-        );
+        .upsert([...players.values()], { onConflict: "id" });
 
       await supabaseAdmin
         .from("player_game_stats")
-        .upsert(playerStats, { onConflict: "game_id,player_id,category" });
+        .upsert(pgStats, { onConflict: "game_id,player_id,category" });
     }
 
-    /* -----------------------------
-       ADVANCED PLAY-BY-PLAY
-    ------------------------------ */
-    const drives = gameData.drives?.previous ?? [];
-    const nflPlays: any[] = [];
-    const legacyPlays: any[] = [];
+    /* ----------------------------------------------
+       8. Insert PLAY-BY-PLAY → nfl_plays (lossless)
+    ---------------------------------------------- */
+    const drives = data.drives?.previous ?? [];
+    const playRows = [];
 
     for (const drive of drives) {
       const driveId = drive.id ?? null;
-      const driveDescription = drive.description ?? null;
-      const driveResult =
-        drive.result ?? drive.shortDisplayResult ?? null;
-      const driveYards = drive.yards ?? null;
+      const driveDesc = drive.description ?? null;
+      const driveResult = drive.result ?? drive.shortDisplayResult ?? null;
       const drivePlays = drive.offensivePlays ?? null;
-      const driveTimeElapsed = drive.timeElapsed?.displayValue ?? null;
+      const driveYards = drive.yards ?? null;
+      const driveTime = drive.timeElapsed?.displayValue ?? null;
 
-      const plays = drive.plays ?? [];
+      for (const play of drive.plays ?? []) {
+        const seq =
+          play.sequenceNumber !== undefined
+            ? Number(play.sequenceNumber)
+            : null;
 
-      for (const play of plays) {
-        const seq = play.sequenceNumber ? Number(play.sequenceNumber) : null;
-
-        let numericPlayId: number | null = null;
-        if (play.id && !isNaN(Number(play.id))) numericPlayId = Number(play.id);
-        else if (seq !== null) numericPlayId = seq;
+        const pid =
+          play.id && !isNaN(Number(play.id))
+            ? Number(play.id)
+            : seq;
 
         const period = play.period?.number ?? null;
         const clock = play.clock?.displayValue ?? null;
 
-        const homeScorePlay = play.homeScore ?? null;
-        const awayScorePlay = play.awayScore ?? null;
-
-        const scoringPlay = play.scoringPlay ?? null;
-        const scoringType = play.scoringType?.name ?? null;
+        const desc = play.text ?? play.description ?? "";
 
         const start = play.start ?? {};
         const end = play.end ?? {};
 
         const down = start.down ?? null;
         const distance = start.distance ?? null;
-
-        const shortText = start.shortDownDistanceText ?? null;
-        const downDistanceText = start.downDistanceText ?? null;
-        const possessionStart = start.possessionText ?? null;
-        const possessionEnd = end.possessionText ?? null;
+        const yardsToGoal = start.yardsToEndzone ?? null;
 
         const startYL = start.yardLine ?? null;
         const endYL = end.yardLine ?? null;
 
-        const yardsToGoal = start.yardsToEndzone ?? null;
+        /* Offense ESPN ID */
+        const offEspn =
+          start.team?.id ??
+          play.team?.id ??
+          drive.team?.id ??
+          null;
 
-        const offenseEspnId =
-          start.team?.id || play.team?.id || drive.team?.id || null;
+        /* Offense Abbreviation (safe mapping) */
+        const offense = offEspn ? teamAbbrByEspnId[offEspn] ?? null : null;
 
-        const offenseAbbr = offenseEspnId
-          ? teamAbbrByEspnId[offenseEspnId] ?? null
-          : null;
+        /* Defense Abbreviation */
+        let defense: string | null = null;
+        if (offense === homeTeam.abbreviation) defense = awayTeam.abbreviation;
+        else if (offense === awayTeam.abbreviation) defense = homeTeam.abbreviation;
 
-        let defenseAbbr: string | null = null;
-        if (offenseAbbr === homeTeam.abbreviation)
-          defenseAbbr = awayTeam.abbreviation;
-        else if (offenseAbbr === awayTeam.abbreviation)
-          defenseAbbr = homeTeam.abbreviation;
-
-        const description = play.text ?? play.description ?? "";
-        const playType = classifyPlayType(description);
-
-        const rawYards =
+        /* Play type + success */
+        const playType = classifyPlayType(desc);
+        const yards =
           play.statYardage !== undefined && play.statYardage !== null
             ? Number(play.statYardage)
             : null;
 
-        const success = computeSuccess(down, distance, rawYards);
+        const success = computeSuccess(down, distance, yards);
 
-        /* legacy "plays" table */
-        legacyPlays.push({
-          id: play.id || `${gameData.id}-${seq}`,
-          game_id: gameData.id,
-          team_id: offenseAbbr,
-          defense_team_id: defenseAbbr,
-          sequence: seq,
-          quarter: period,
-          clock: clock,
-          down: down,
-          distance: distance,
-          yards_to_goal: yardsToGoal,
-          yard_line: startYL,
-          play_type: playType,
-          yards_gained: rawYards,
-          success: success,
-          description: description,
-          raw: play,
-        });
+        /* -----------------------------------------
+           Insert Row (raw_* and calc_* ONLY)
+           enrich_* remains empty for now
+        ----------------------------------------- */
+        playRows.push({
+          game_id: Number(data.id),
+          play_id: pid,
 
-        /* new master nfl_plays table */
-        nflPlays.push({
-          game_id: Number(gameData.id),
-          play_id: numericPlayId,
+          /* RAW */
+          raw_quarter: period,
+          raw_clock: clock,
+          raw_description: desc,
+          raw_down: down,
+          raw_distance: distance,
+          raw_start_yardline: startYL,
+          raw_end_yardline: endYL,
+          raw_yards_to_goal: yardsToGoal,
+          raw_drive_id: driveId,
+          raw_drive_description: driveDesc,
+          raw_drive_result: driveResult,
+          raw_drive_plays: drivePlays,
+          raw_drive_yards: driveYards,
+          raw_drive_time_elapsed: driveTime,
+          raw_offense_team: offense,
+          raw_defense_team: defense,
+          raw_offense_espn_team_id: offEspn,
+          raw_defense_espn_team_id:
+            offense === homeTeam.abbreviation ? awayTeam.id : homeTeam.id,
+          raw_scoring_play: play.scoringPlay ?? null,
+          raw_scoring_type: play.scoringType?.name ?? null,
+          raw_home_score_before: play.homeScore ?? null,
+          raw_away_score_before: play.awayScore ?? null,
+          raw_wallclock: play.wallclock ? new Date(play.wallclock).toISOString() : null,
+          raw_modified: play.modified ? new Date(play.modified).toISOString() : null,
 
-          sequence_number: seq,
-          quarter: period,
-          qtr: period,
-          clock: clock,
-          wallclock: play.wallclock
-            ? new Date(play.wallclock).toISOString()
-            : null,
-          modified: play.modified
-            ? new Date(play.modified).toISOString()
-            : null,
-
-          home_score_before_play: homeScorePlay,
-          away_score_before_play: awayScorePlay,
-          scoring_play: scoringPlay,
-          scoring_type: scoringType,
-
-          drive_id: driveId,
-          drive_description: driveDescription,
-          drive_result: driveResult,
-          drive_yards: driveYards,
-          drive_plays: drivePlays,
-          drive_time_elapsed: driveTimeElapsed,
-
-          short_down_distance_text: shortText,
-          down_distance_text: downDistanceText,
-          start_possession_text: possessionStart,
-          end_possession_text: possessionEnd,
-
-          start_yardline: startYL,
-          end_yardline: endYL,
-          yards_to_endzone: yardsToGoal,
-
-          offense_team: offenseAbbr,
-          defense_team: defenseAbbr,
-          offense_espn_team_id: offenseEspnId,
-          defense_espn_team_id:
-            offenseAbbr === homeTeam.abbreviation
-              ? awayTeam.id
-              : homeTeam.id,
-
-          down: down,
-          distance: distance,
-          yard_line: startYL ? String(startYL) : null,
-
-          description: description,
-          play_type: playType,
-          result_type: playType,
-          result_yards: rawYards,
-          success: success,
-
-          week: weekNumber,
-          season: seasonYear,
-          game_date: gameDateIso ? gameDateIso.substring(0, 10) : null,
+          /* COMPUTED */
+          calc_sequence_number: seq,
+          calc_play_type: playType,
+          calc_success: success,
+          calc_epa: null,
+          calc_pressure_likely: null,
+          calc_short_down_distance_text: start.shortDownDistanceText ?? null,
+          calc_down_distance_text: start.downDistanceText ?? null,
+          calc_start_possession_text: start.possessionText ?? null,
+          calc_end_possession_text: end.possessionText ?? null,
+          calc_start_yardline_numeric: startYL,
+          calc_end_yardline_numeric: endYL,
+          calc_season: season,
+          calc_week: week,
+          calc_game_date: gameDateIso ? gameDateIso.substring(0, 10) : null,
         });
       }
     }
 
-    /* write output to DB */
-
-    if (legacyPlays.length > 0) {
-      await supabaseAdmin
-        .from("plays")
-        .upsert(legacyPlays, { onConflict: "id" });
-    }
-
-    if (nflPlays.length > 0) {
+    /* ----------------------------------------------
+       9. UPSERT INTO nfl_plays
+    ---------------------------------------------- */
+    if (playRows.length > 0) {
       await supabaseAdmin
         .from("nfl_plays")
-        .upsert(nflPlays, { onConflict: "game_id,play_id" });
+        .upsert(playRows, { onConflict: "game_id,play_id" });
     }
 
     return NextResponse.json({
       success: true,
       gameId,
-      inserted: {
-        nflPlays: nflPlays.length,
-        legacyPlays: legacyPlays.length,
-      },
+      inserted: playRows.length,
     });
-  } catch (error: any) {
-    console.error("Import Game Error:", error);
+  } catch (err: any) {
+    console.error("ImportGame Error:", err);
     return NextResponse.json(
-      { error: error.message ?? "Internal server error" },
+      { error: err.message || "Unknown server error" },
       { status: 500 }
     );
   }

@@ -10,18 +10,17 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
 
 const BUCKET = "nfl-enriched";
 
-// Get the newest CSV file in the bucket
-async function getLatestCSVPath() {
+async function getLatestCSV() {
   const { data, error } = await supabase.storage
     .from(BUCKET)
     .list("", { sortBy: { column: "updated_at", order: "desc" } });
 
   if (error) throw new Error(`List failed: ${error.message}`);
 
-  const csv = data.find(f => f.name.toLowerCase().endsWith(".csv"));
-  if (!csv) throw new Error("No CSV files found in bucket root.");
+  const file = data.find(f => f.name.toLowerCase().endsWith(".csv"));
+  if (!file) throw new Error("No CSV files found.");
 
-  return csv.name; // filename only, no folder
+  return file.name;
 }
 
 async function downloadCSV(filename: string): Promise<string> {
@@ -29,61 +28,39 @@ async function downloadCSV(filename: string): Promise<string> {
     .from(BUCKET)
     .download(filename);
 
-  if (error) throw new Error(`Download failed for ${filename}: ${error.message}`);
+  if (error) throw new Error(`Download failed: ${error.message}`);
   return await data.text();
 }
 
-async function insertIntoStaging(rows: any[]) {
-  if (rows.length === 0) return;
-
-  const { error } = await supabase
-    .from("nfl_enriched_raw")
-    .insert(rows);
-
-  if (error)
-    throw new Error(`Failed inserting into nfl_enriched_raw: ${error.message}`);
+async function parseCSV(text: string): Promise<any[]> {
+  return await parse(text, { skipFirstRow: false, columns: true });
 }
 
-async function parseCSV(text: string): Promise<any[]> {
-  return await parse(text, {
-    skipFirstRow: false,
-    columns: true
-  });
+async function insertRows(rows: any[]) {
+  if (rows.length === 0) return;
+  const { error } = await supabase.from("nfl_enriched_raw").insert(rows);
+  if (error) throw new Error(`Insert failed: ${error.message}`);
 }
 
 Deno.serve(async () => {
   try {
-    console.log("Starting enrichment...");
-
-    // STEP 1 — find latest CSV
-    const filename = await getLatestCSVPath();
-    console.log("Using CSV:", filename);
-
-    // STEP 2 — download it
+    const filename = await getLatestCSV();
     const csvText = await downloadCSV(filename);
-
-    // STEP 3 — parse it
     const rows = await parseCSV(csvText);
-    console.log(`Parsed ${rows.length} rows`);
 
-    // STEP 4 — insert into raw staging
-    await insertIntoStaging(rows);
-
-    // STEP 5 — merge into nfl_plays
-    const { error: fnError } = await supabase.rpc("merge_enriched_from_raw");
-    if (fnError) throw new Error(`Merge failed: ${fnError.message}`);
+    await insertRows(rows);
+    await supabase.rpc("merge_enriched_from_raw");
 
     return new Response(
       JSON.stringify({
         success: true,
         rows: rows.length,
-        file_used: filename,
+        file_used: filename
       }),
       { headers: { "Content-Type": "application/json" } }
     );
 
-  } catch (err: any) {
-    console.error(err);
+  } catch (err) {
     return new Response(
       JSON.stringify({ success: false, error: err.message }),
       { status: 500 }

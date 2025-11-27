@@ -1,149 +1,92 @@
-"use server";
+// app/page.tsx
+"use client";
 
-import { supabase } from "@/lib/supabaseClient";
 import Link from "next/link";
 
-export default async function HomePage() {
-  // Load team metadata
-  const { data: teams } = await supabase
-    .from("teams")
-    .select("id, display_name, logo");
-
-  // Load all games + team stats
-  const { data: teamStats } = await supabase
-    .from("team_game_stats")
-    .select("*");
-
-  const { data: games } = await supabase.from("games").select("*");
-
-  if (!teams || !teamStats || !games) {
-    return <div className="p-10 text-xl">No data found.</div>;
-  }
-
-  // Aggregate stats per team
-  const totals: Record<string, any> = {};
-
-  for (const team of teams) {
-    totals[team.id] = {
-      team: team,
-      gamesPlayed: 0,
-      pointsFor: 0,
-      pointsAllowed: 0,
-      totalYards: 0,
-      passingYards: 0,
-      rushingYards: 0,
-      turnovers: 0,
-      record: { wins: 0, losses: 0 },
-    };
-  }
-
-  // Merge team stats and scores
-  for (const game of games) {
-    const home = game.home_team_id;
-    const away = game.away_team_id;
-
-    const homeStats = teamStats.find(
-      (s: any) => s.game_id === game.id && s.team_id === home
-    );
-    const awayStats = teamStats.find(
-      (s: any) => s.game_id === game.id && s.team_id === away
-    );
-
-    if (homeStats) {
-      const t = totals[home];
-      t.gamesPlayed++;
-      t.pointsFor += homeStats.points || 0;
-      t.pointsAllowed += awayStats?.points || 0;
-      t.totalYards += homeStats.total_yards || 0;
-      t.passingYards += homeStats.passing_yards || 0;
-      t.rushingYards += homeStats.rushing_yards || 0;
-      t.turnovers += homeStats.turnovers || 0;
-
-      if (homeStats.points > (awayStats?.points || 0)) t.record.wins++;
-      else t.record.losses++;
-    }
-
-    if (awayStats) {
-      const t = totals[away];
-      t.gamesPlayed++;
-      t.pointsFor += awayStats.points || 0;
-      t.pointsAllowed += homeStats?.points || 0;
-      t.totalYards += awayStats.total_yards || 0;
-      t.passingYards += awayStats.passing_yards || 0;
-      t.rushingYards += awayStats.rushing_yards || 0;
-      t.turnovers += awayStats.turnovers || 0;
-
-      if (awayStats.points > (homeStats?.points || 0)) t.record.wins++;
-      else t.record.losses++;
-    }
-  }
-
-  const rows = Object.values(totals);
-
+export default function Home() {
   return (
-    <div className="p-6 sm:p-10">
-      {/* Page Header */}
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold tracking-tight">NFL Team Dashboard</h1>
-        <p className="text-gray-600 mt-1">
-          Live team performance summary powered by your Supabase + ESPN data.
+    <main className="min-h-screen bg-[#F7F7F7] text-[#0A0A0A]">
+      
+      {/* HERO SECTION */}
+      <section className="w-full py-20 text-center border-b border-black/10 bg-white">
+        <h1 className="text-4xl md:text-6xl font-bold mb-4">
+          NFL Analytics Engine
+        </h1>
+        <p className="text-lg text-black/60 max-w-2xl mx-auto mb-6">
+          Real-time play-by-play intelligence + next-day enriched metrics.
         </p>
-      </div>
 
-      {/* Card Container */}
-      <div className="bg-white shadow-sm rounded-xl border border-gray-200 p-6">
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm hs-table">
-            <thead className="bg-gray-50 border-b">
-              <tr className="text-gray-700">
-                <th className="p-3 text-left font-medium">Team</th>
-                <th className="p-3 text-right font-medium">GP</th>
-                <th className="p-3 text-right font-medium">PF</th>
-                <th className="p-3 text-right font-medium">PA</th>
-                <th className="p-3 text-right font-medium">Yards</th>
-                <th className="p-3 text-right font-medium">Pass</th>
-                <th className="p-3 text-right font-medium">Rush</th>
-                <th className="p-3 text-right font-medium">TO</th>
-                <th className="p-3 text-right font-medium">Record</th>
-              </tr>
-            </thead>
+        <input
+          placeholder="Search Game ID..."
+          className="w-full max-w-lg py-3 px-4 rounded-xl bg-black/5 border border-black/20 outline-none"
+        />
 
-            <tbody className="divide-y divide-gray-200">
-              {rows.map((row: any) => (
-                <tr
-                  key={row.team.id}
-                  className="hover:bg-gray-50 transition cursor-pointer"
-                >
-                  <td className="p-3">
-                    <Link href={`/teams/${row.team.id}`}>
-                      <div className="flex items-center gap-2">
-                        {row.team.logo && (
-                          <img
-                            src={row.team.logo}
-                            className="w-6 h-6 rounded"
-                            alt={row.team.display_name}
-                          />
-                        )}
-                        {row.team.display_name}
-                      </div>
-                    </Link>
-                  </td>
-                  <td className="p-3 text-right">{row.gamesPlayed}</td>
-                  <td className="p-3 text-right">{row.pointsFor}</td>
-                  <td className="p-3 text-right">{row.pointsAllowed}</td>
-                  <td className="p-3 text-right">{row.totalYards}</td>
-                  <td className="p-3 text-right">{row.passingYards}</td>
-                  <td className="p-3 text-right">{row.rushingYards}</td>
-                  <td className="p-3 text-right">{row.turnovers}</td>
-                  <td className="p-3 text-right">
-                    {row.record.wins}-{row.record.losses}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="flex items-center justify-center gap-4 mt-6">
+          <Link href="/live" className="px-6 py-3 bg-blue-600 text-white rounded-lg">
+            Live Games
+          </Link>
+          <Link href="/teams" className="px-6 py-3 bg-black/5 border border-black/10 rounded-lg">
+            Teams
+          </Link>
+          <Link href="/players" className="px-6 py-3 bg-black/5 border border-black/10 rounded-lg">
+            Players
+          </Link>
         </div>
-      </div>
-    </div>
+      </section>
+
+      {/* LIVE GAMES SECTION */}
+      <section className="py-12 px-6">
+        <h2 className="text-2xl font-semibold mb-4">Live Games</h2>
+        <p className="text-black/60 mb-6">
+          Pulled automatically from ESPN API.
+        </p>
+
+        {/* Placeholder until we connect API */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {[1, 2, 3].map((n) => (
+            <div
+              key={n}
+              className="p-6 rounded-xl bg-white border border-black/10 shadow-sm"
+            >
+              <p className="text-black/60">Game #{n}</p>
+              <p className="text-xl font-bold mt-2">Team A vs Team B</p>
+              <p className="text-black/50">Q1 – 12:34</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ADVANCED METRICS */}
+      <section className="py-12 px-6">
+        <h2 className="text-2xl font-semibold mb-4">Advanced Metrics</h2>
+        <p className="text-black/60 mb-6">
+          Powered by enriched play-by-play + your algorithms.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {[
+            "Coverage Stats",
+            "Blitz Rates",
+            "Personnel Usage",
+            "Route Heatmaps",
+            "OL/DL Matchups",
+            "What-If Engine",
+          ].map((title) => (
+            <div
+              key={title}
+              className="p-6 rounded-xl bg-white border border-black/10 shadow-sm hover:shadow-md transition cursor-pointer"
+            >
+              <p className="text-xl font-semibold">{title}</p>
+              <p className="text-black/50 text-sm mt-2">Coming soon</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* FOOTER */}
+      <footer className="py-8 text-center text-black/50 border-t border-black/10 mt-12">
+        © {new Date().getFullYear()} NFL Analytics Engine — Built by Sanjit
+      </footer>
+    </main>
   );
 }

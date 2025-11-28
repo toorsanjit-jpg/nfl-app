@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
 // ---- Types ---- //
@@ -20,8 +21,9 @@ interface Play {
 }
 
 // ---- Component ---- //
-export default function GamePage({ params }: { params: { gameId: string } }) {
-  const gameId = Number(params.gameId); // convert once, cleanly
+export default function GamePage() {
+  const params = useParams<{ gameId: string }>();
+  const gameId = Number(params?.gameId); // convert once, cleanly
 
   const [plays, setPlays] = useState<Play[]>([]);
   const [loading, setLoading] = useState(true);

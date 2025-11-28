@@ -23,7 +23,10 @@ interface Play {
 // ---- Component ---- //
 export default function GamePage() {
   const params = useParams<{ gameId: string }>();
-  const gameId = Number(params?.gameId); // convert once, cleanly
+
+  // Safely extract & convert the param
+  const gameIdStr = params?.gameId ?? null;
+  const gameId = gameIdStr ? Number(gameIdStr) : NaN;
 
   const [plays, setPlays] = useState<Play[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,14 +34,16 @@ export default function GamePage() {
 
   // ---- LOAD PLAYS FROM SUPABASE ---- //
   useEffect(() => {
-    if (isNaN(gameId)) {
-      setError(`Invalid game ID: ${params.gameId}`);
+    // If param is missing or invalid
+    if (!gameIdStr || isNaN(gameId)) {
+      setError(`Invalid game ID: ${gameIdStr ?? "undefined"}`);
       setLoading(false);
       return;
     }
 
     async function fetchPlays() {
       setLoading(true);
+      setError(null);
 
       const { data, error } = await supabase
         .from("nfl_plays")
@@ -57,34 +62,34 @@ export default function GamePage() {
     }
 
     fetchPlays();
-  }, [gameId, params.gameId]);
+  }, [gameId, gameIdStr]);
 
-  // ---- LOADING ---- //
+  // ---- UI STATES ---- //
+
   if (loading) {
     return <PageWrap>Loading play-by-play…</PageWrap>;
   }
 
-  // ---- ERROR ---- //
   if (error) {
     return <PageWrap>Error: {error}</PageWrap>;
   }
 
-  // ---- NO DATA ---- //
   if (plays.length === 0) {
     return (
       <PageWrap>
         <BackButton />
-        <h1 className="text-3xl font-bold mb-2">Game {params.gameId}</h1>
+        <h1 className="text-3xl font-bold mb-2">Game {gameIdStr}</h1>
         <p>No plays found in <code>nfl_plays</code> for this game.</p>
       </PageWrap>
     );
   }
 
-  // ---- PAGE ---- //
+  // ---- MAIN PAGE ---- //
+
   return (
     <PageWrap>
       <BackButton />
-      <h1 className="text-3xl font-bold mb-6">Game {params.gameId}</h1>
+      <h1 className="text-3xl font-bold mb-6">Game {gameIdStr}</h1>
 
       <div className="space-y-4">
         {plays.map((p, i) => (

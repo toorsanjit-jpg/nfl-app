@@ -4,60 +4,49 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 
-type Play = {
-  game_id: number;
+// ---- Types ---- //
+interface Play {
   play_id: number | null;
-  sequence_number: number | null;
+  description: string | null;
   quarter: number | null;
   clock: string | null;
-  description: string | null;
   offense_team: string | null;
   defense_team: string | null;
   down: number | null;
   distance: number | null;
   down_distance_text: string | null;
   scoring_play: boolean | null;
-};
+  sequence_number: number | null;
+}
 
+// ---- Component ---- //
 export default function GamePage({ params }: { params: { gameId: string } }) {
-  const { gameId } = params;
+  const gameId = Number(params.gameId); // convert once, cleanly
 
   const [plays, setPlays] = useState<Play[]>([]);
   const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
+  // ---- LOAD PLAYS FROM SUPABASE ---- //
   useEffect(() => {
-    async function loadPlays() {
-      setLoading(true);
-      setErrorMsg(null);
+    if (isNaN(gameId)) {
+      setError(`Invalid game ID: ${params.gameId}`);
+      setLoading(false);
+      return;
+    }
 
-      const numericGameId = Number(gameId);
+    async function fetchPlays() {
+      setLoading(true);
 
       const { data, error } = await supabase
-        .from("nfl_plays") // all lowercase
-        .select(
-          `
-          game_id,
-          play_id,
-          sequence_number,
-          quarter,
-          clock,
-          description,
-          offense_team,
-          defense_team,
-          down,
-          distance,
-          down_distance_text,
-          scoring_play
-        `
-        )
-        .eq("game_id", numericGameId)
+        .from("nfl_plays")
+        .select("*")
+        .eq("game_id", gameId)
         .order("quarter", { ascending: true })
         .order("sequence_number", { ascending: true });
 
       if (error) {
-        console.error("Error loading plays:", error);
-        setErrorMsg(error.message);
+        setError(error.message);
       } else {
         setPlays((data as Play[]) || []);
       }
@@ -65,97 +54,98 @@ export default function GamePage({ params }: { params: { gameId: string } }) {
       setLoading(false);
     }
 
-    loadPlays();
-  }, [gameId]);
+    fetchPlays();
+  }, [gameId, params.gameId]);
 
+  // ---- LOADING ---- //
   if (loading) {
+    return <PageWrap>Loading play-by-play…</PageWrap>;
+  }
+
+  // ---- ERROR ---- //
+  if (error) {
+    return <PageWrap>Error: {error}</PageWrap>;
+  }
+
+  // ---- NO DATA ---- //
+  if (plays.length === 0) {
     return (
-      <div className="p-12 text-center text-black/50">
-        Loading play-by-play for game {gameId}...
-      </div>
+      <PageWrap>
+        <BackButton />
+        <h1 className="text-3xl font-bold mb-2">Game {params.gameId}</h1>
+        <p>No plays found in <code>nfl_plays</code> for this game.</p>
+      </PageWrap>
     );
   }
 
-  if (errorMsg) {
-    return (
-      <div className="p-12 text-center text-red-600">
-        Error loading data: {errorMsg}
-      </div>
-    );
-  }
-
-  if (!plays.length) {
-    return (
-      <main className="min-h-screen bg-[#F7F7F7] text-[#0A0A0A] p-6">
-        <Link
-          href="/live"
-          className="inline-block mb-4 px-4 py-2 bg-black/10 border border-black/20 rounded-lg"
-        >
-          ← Back to Live Games
-        </Link>
-        <h1 className="text-3xl font-bold mb-4">
-          Game Play-By-Play: {gameId}
-        </h1>
-        <p className="text-black/60">
-          No plays found in <code>nfl_plays</code> for this game yet.
-        </p>
-      </main>
-    );
-  }
-
+  // ---- PAGE ---- //
   return (
-    <main className="min-h-screen bg-[#F7F7F7] text-[#0A0A0A] p-6">
-      <Link
-        href="/live"
-        className="inline-block mb-4 px-4 py-2 bg-black/10 border border-black/20 rounded-lg"
-      >
-        ← Back to Live Games
-      </Link>
-
-      <h1 className="text-3xl font-bold mb-6">
-        Game Play-By-Play: {gameId}
-      </h1>
+    <PageWrap>
+      <BackButton />
+      <h1 className="text-3xl font-bold mb-6">Game {params.gameId}</h1>
 
       <div className="space-y-4">
-        {plays.map((play, idx) => {
-          const ddText =
-            play.down_distance_text ||
-            (play.down != null && play.distance != null
-              ? `${play.down} & ${play.distance}`
-              : null);
-
-          return (
-            <div
-              key={play.play_id ?? idx}
-              className="bg-white p-4 rounded-xl border border-black/10 shadow-sm"
-            >
-              <div className="flex justify-between items-center mb-1">
-                <p className="text-black/50 text-sm">
-                  Q{play.quarter ?? "-"}
-                  {play.clock ? ` — ${play.clock}` : ""}
-                </p>
-                <p className="text-black/50 text-xs">
-                  {play.offense_team} vs {play.defense_team}
-                </p>
-              </div>
-
-              {ddText && (
-                <p className="font-semibold mb-1">
-                  {ddText}
-                </p>
-              )}
-
-              <p>{play.description}</p>
-
-              {play.scoring_play && (
-                <p className="text-green-600 font-semibold text-sm mt-2">
-                  SCORING PLAY
-                </p>
-              )}
-            </div>
-          );
-        })}
+        {plays.map((p, i) => (
+          <PlayCard key={p.play_id || i} play={p} />
+        ))}
       </div>
+    </PageWrap>
+  );
+}
+
+// ---- Reusable Components ---- //
+
+function PageWrap({ children }: { children: React.ReactNode }) {
+  return (
+    <main className="min-h-screen bg-[#F7F7F7] text-[#0A0A0A] p-6">
+      {children}
     </main>
+  );
+}
+
+function BackButton() {
+  return (
+    <Link
+      href="/live"
+      className="inline-block mb-4 px-4 py-2 bg-black/10 border border-black/20 rounded-lg"
+    >
+      ← Back to Live Games
+    </Link>
+  );
+}
+
+function PlayCard({ play }: { play: Play }) {
+  const downDist =
+    play.down_distance_text ||
+    (play.down != null && play.distance != null
+      ? `${play.down} & ${play.distance}`
+      : null);
+
+  return (
+    <div className="bg-white p-4 rounded-xl border border-black/10 shadow-sm">
+      {/* Top Row */}
+      <div className="flex justify-between items-center mb-1">
+        <p className="text-black/50 text-sm">
+          Q{play.quarter ?? "-"} {play.clock ? `• ${play.clock}` : ""}
+        </p>
+
+        <p className="text-black/50 text-xs">
+          {play.offense_team} vs {play.defense_team}
+        </p>
+      </div>
+
+      {/* Down & Distance */}
+      {downDist && <p className="font-semibold mb-1">{downDist}</p>}
+
+      {/* Description */}
+      <p>{play.description}</p>
+
+      {/* Scoring Play */}
+      {play.scoring_play && (
+        <p className="text-green-600 font-semibold text-sm mt-2">
+          SCORING PLAY
+        </p>
+      )}
+    </div>
   );
 }

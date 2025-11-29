@@ -1,8 +1,5 @@
 // Live game ingestion route - updated
 import type { NextApiRequest, NextApiResponse } from "next";
-
-
-import type { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
 
 const RAPID_API_KEY = process.env.RAPID_API_KEY;

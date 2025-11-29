@@ -1,17 +1,27 @@
-// app/api/ingest-live/route.ts
-import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabaseClient";
+import type { NextApiRequest, NextApiResponse } from "next";
+import { createClient } from "@supabase/supabase-js";
 
-const RAPID_API_KEY = process.env.RAPID_API_KEY; // ← FIXED (underscore)
+const RAPID_API_KEY = process.env.RAPID_API_KEY;
 const RAPID_HOST = "sports-information.p.rapidapi.com";
 
-export async function GET() {
-  if (!RAPID_API_KEY) {
-    return NextResponse.json(
-      { error: "Missing RAPID_API_KEY in environment variables" },
-      { status: 500 }
-    );
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
+  if (req.method !== "GET") {
+    return res.status(405).json({ error: "Method not allowed" });
   }
+
+  if (!RAPID_API_KEY) {
+    return res.status(500).json({
+      error: "Missing RAPID_API_KEY in environment variables",
+    });
+  }
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
 
   try {
     // 1️⃣ Fetch ESPN scoreboard (free & lightweight)
@@ -28,7 +38,7 @@ export async function GET() {
     });
 
     if (liveGames.length === 0) {
-      return NextResponse.json({
+      return res.status(200).json({
         message: "No live games at this moment. Nothing ingested.",
       });
     }
@@ -112,11 +122,10 @@ export async function GET() {
       }
     }
 
-    return NextResponse.json({ status: "complete", results });
+    return res.status(200).json({ status: "complete", results });
   } catch (err: any) {
-    return NextResponse.json(
-      { error: err.message ?? "Unknown error" },
-      { status: 500 }
-    );
+    return res.status(500).json({
+      error: err.message ?? "Unknown error",
+    });
   }
 }

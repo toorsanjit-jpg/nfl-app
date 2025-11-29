@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/ingest-live",
-      "schedule": "*/12 * * * * *"
+      "schedule": "* * * * *"
     }
   ]
 }

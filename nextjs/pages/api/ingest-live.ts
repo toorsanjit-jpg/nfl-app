@@ -1,5 +1,5 @@
-// Force rebuild
-
+// Live game ingestion route - updated
+import type { NextApiRequest, NextApiResponse } from "next";
 
 
 import type { NextApiRequest, NextApiResponse } from "next";

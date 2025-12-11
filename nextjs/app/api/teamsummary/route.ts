@@ -1,26 +1,19 @@
-import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabaseClient";
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
-// Shape we expose to the UI
-export type TeamSummaryDTO = {
-  teamId: string;
-  teamName: string;
-  teamAbbr: string;
-  teamLogo: string | null;
-  teamColor: string | null;
-  gamesPlayed: number;
-  pointsFor: number;
-  pointsPerGame: number;
-  totalYards: number;
-  yardsPerPlay: number;
-  passingYards: number;
-  rushingYards: number;
-  turnovers: number;
-};
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-export async function GET(req: Request) {
+// Server-only client (this code only runs on the server)
+const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: { persistSession: false },
+});
+
+export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
+
   const teamId = searchParams.get("teamId");
+  const seasonParam = searchParams.get("season");
 
   if (!teamId) {
     return NextResponse.json(
@@ -29,11 +22,11 @@ export async function GET(req: Request) {
     );
   }
 
-  // Team IDs in your DB are all caps like "LV", "DAL", etc.
-  const teamKey = teamId.toUpperCase();
+  const season = seasonParam ? Number(seasonParam) : null;
 
   const { data, error } = await supabase.rpc("fn_team_summary", {
-    p_team_id: teamKey,
+    p_team_id: teamId,
+    p_season: season,
   });
 
   if (error) {
@@ -44,30 +37,7 @@ export async function GET(req: Request) {
     );
   }
 
-  if (!data || data.length === 0) {
-    return NextResponse.json(
-      { error: "Team not found", teamId: teamKey },
-      { status: 404 }
-    );
-  }
+  const row = Array.isArray(data) ? data[0] : data;
 
-  const row = data[0];
-
-  const dto: TeamSummaryDTO = {
-    teamId: row.team_id,
-    teamName: row.team_name,
-    teamAbbr: row.team_abbr,
-    teamLogo: row.team_logo ?? null,
-    teamColor: row.team_color ?? null,
-    gamesPlayed: row.games_played ?? 0,
-    pointsFor: row.points_for ?? 0,
-    pointsPerGame: Number(row.points_per_game ?? 0),
-    totalYards: row.total_yards ?? 0,
-    yardsPerPlay: Number(row.yards_per_play ?? 0),
-    passingYards: row.passing_yards ?? 0,
-    rushingYards: row.rushing_yards ?? 0,
-    turnovers: row.turnovers ?? 0,
-  };
-
-  return NextResponse.json(dto);
+  return NextResponse.json({ summary: row ?? null });
 }

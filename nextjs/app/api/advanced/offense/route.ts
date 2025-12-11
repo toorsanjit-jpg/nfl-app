@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
 
     let query = supabase
       .from("team_offense_summary")
-      .select(
+      .select<TeamOffenseRow>(
         [
           "team_id",
           "team_name",
@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       groupBy,
       season,
-      rows: (data || []) as TeamOffenseRow[],
+      rows: data ?? [],
     });
   } catch (err: any) {
     console.error("advanced/offense GET error:", err);

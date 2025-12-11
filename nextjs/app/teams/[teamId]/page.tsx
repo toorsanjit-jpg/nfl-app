@@ -1,38 +1,44 @@
+// nextjs/app/teams/[teamId]/page.tsx
+
 import { notFound } from "next/navigation";
 import { TeamSummaryHeader, TeamStatsTable } from "@/components/team/TeamSummary";
 import type { TeamSummaryDTO } from "@/app/api/teamSummary/route";
 
 type TeamPageProps = {
-  params: Promise<{ teamId: string }>;
+  params: { teamId: string };
 };
 
+/**
+ * Server-side fetch helper for the team summary API.
+ */
 async function fetchTeamSummary(teamId: string): Promise<TeamSummaryDTO | null> {
+  // Determine correct base URL in production (Vercel) or local dev
   const baseUrl =
     process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.NEXT_PUBLIC_VERCEL_URL
+    (process.env.NEXT_PUBLIC_VERCEL_URL
       ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
-      : "http://localhost:3000";
+      : "http://localhost:3000");
 
-  const res = await fetch(
-    `${baseUrl}/api/teamSummary?teamId=${encodeURIComponent(teamId)}`,
-    {
-      // Ensure this always runs on the server and can be revalidated easily
-      cache: "no-store",
-    }
-  );
+  const url = `${baseUrl}/api/teamSummary?teamId=${encodeURIComponent(teamId)}`;
+
+  const res = await fetch(url, {
+    cache: "no-store", // always fresh
+  });
 
   if (!res.ok) {
     if (res.status === 404) return null;
-    console.error("teamSummary API error:", res.status, await res.text());
+
+    console.error("Error fetching team summary:", res.status, await res.text());
     return null;
   }
 
-  const data = (await res.json()) as TeamSummaryDTO;
-  return data;
+  return (await res.json()) as TeamSummaryDTO;
 }
 
 export default async function TeamPage({ params }: TeamPageProps) {
-  const { teamId } = await params;
+  const { teamId } = params;
+
+  // Fetch summary from our API route → RPC → Supabase
   const summary = await fetchTeamSummary(teamId);
 
   if (!summary) {
@@ -40,9 +46,19 @@ export default async function TeamPage({ params }: TeamPageProps) {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 md:px-8">
+    <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 flex flex-col gap-6">
+
+      {/* TEAM HEADER SUMMARY CARD */}
       <TeamSummaryHeader summary={summary} />
+
+      {/* TEAM STATS TABLE (OFFENSE TOTALS) */}
       <TeamStatsTable summary={summary} />
+
+      {/* PLACEHOLDER - we will add tabs here shortly */}
+      {/* 
+        <TeamTabs teamId={teamId} />
+      */}
+
     </div>
   );
 }

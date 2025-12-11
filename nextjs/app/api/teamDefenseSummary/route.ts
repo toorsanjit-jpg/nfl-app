@@ -1,6 +1,26 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 
+export type TeamDefenseSummaryRow = {
+  team_id: string;
+  team_name: string | null;
+  season: number | null;
+  games: number | null;
+  plays_defended: number | null;
+  pass_plays_defended: number | null;
+  run_plays_defended: number | null;
+  sacks_made: number | null;
+  yards_allowed: number | null;
+  pass_yards_allowed: number | null;
+  rush_yards_allowed: number | null;
+  yards_per_play_allowed: number | null;
+  pass_yards_per_game_allowed: number | null;
+  rush_yards_per_game_allowed: number | null;
+  third_down_att_def: number | null;
+  third_down_conv_def: number | null;
+  third_down_pct_def: number | null;
+};
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const teamId = searchParams.get("teamId");
@@ -20,5 +40,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ summary: data });
+  const summary = (data as TeamDefenseSummaryRow | null) ?? null;
+
+  return NextResponse.json({ summary });
 }

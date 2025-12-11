@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import type { TeamSpecialSummaryDTO } from "@/types/TeamSpecialSummary";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -23,5 +24,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ summary: data?.[0] ?? null });
+  const summary = (data?.[0] as TeamSpecialSummaryDTO | undefined) ?? null;
+
+  return NextResponse.json({ summary });
 }

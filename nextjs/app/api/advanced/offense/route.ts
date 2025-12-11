@@ -1,9 +1,11 @@
 // nextjs/app/api/advanced/offense/route.ts
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = process.env.SUPABASE_URL!;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE!
+);
 
 export type TeamOffenseRow = {
   team_id: string;
@@ -25,45 +27,20 @@ export type TeamOffenseRow = {
   third_down_pct: number | null;
 };
 
-export async function GET(req: NextRequest) {
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const season = searchParams.get("season");
+  const groupBy = searchParams.get("groupBy") || "total";
+
   try {
-    const url = new URL(req.url);
-    const seasonParam = url.searchParams.get("season");
-    const groupBy = url.searchParams.get("groupBy") ?? "totals"; // reserved for future
-
-    const season = seasonParam ? Number(seasonParam) : null;
-
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-      auth: { persistSession: false },
-    });
-
+    // Typed query
     let query = supabase
       .from("team_offense_summary")
-      .select<TeamOffenseRow>(
-        [
-          "team_id",
-          "team_name",
-          "season",
-          "games",
-          "plays",
-          "pass_plays",
-          "run_plays",
-          "sacks_taken",
-          "total_yards",
-          "pass_yards",
-          "rush_yards",
-          "yards_per_play",
-          "pass_yards_per_game",
-          "rush_yards_per_game",
-          "third_down_att",
-          "third_down_conv",
-          "third_down_pct",
-        ].join(",")
-      )
-      .order("total_yards", { ascending: false });
+      .select("*")
+      .returns<TeamOffenseRow[]>();   // ← IMPORTANT FIX
 
-    if (season != null && !Number.isNaN(season)) {
-      query = query.eq("season", season);
+    if (season) {
+      query = query.eq("season", Number(season));
     }
 
     const { data, error } = await query;
@@ -76,18 +53,17 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    // Ensure rows is ALWAYS an array of valid objects
     return NextResponse.json({
       groupBy,
       season,
-      rows: data ?? [],
+      rows: Array.isArray(data) ? data : [],
     });
   } catch (err: any) {
     console.error("advanced/offense GET error:", err);
+
     return NextResponse.json(
-      {
-        error: "unexpected_error",
-        details: String(err?.message ?? err),
-      },
+      { error: "server_error", details: err.message },
       { status: 500 }
     );
   }

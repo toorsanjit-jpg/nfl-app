@@ -1,10 +1,11 @@
-// nextjs/app/api/advanced/offense/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/supabase";
 
-const supabase = createClient(
+const supabase = createClient<Database>(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { persistSession: false } }
 );
 
 export type TeamOffenseRow = {
@@ -27,22 +28,56 @@ export type TeamOffenseRow = {
   third_down_pct: number | null;
 };
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const season = searchParams.get("season");
-  const groupBy = searchParams.get("groupBy") || "total";
-
+export async function GET(req: Request) {
   try {
-    // Typed query
+    const { searchParams } = new URL(req.url);
+
+    const teamId = searchParams.get("teamId");
+    const season = searchParams.get("season");
+    const groupBy = searchParams.get("groupBy") ?? "total";
+
+    if (!teamId) {
+      return NextResponse.json(
+        { error: "missing_teamId" },
+        { status: 400 }
+      );
+    }
+
+    // --------------------------
+    // BASE QUERY (NO TYPING HERE)
+    // --------------------------
     let query = supabase
       .from("team_offense_summary")
-      .select("*")
-      .returns<TeamOffenseRow[]>();   // ← IMPORTANT FIX
+      .select(
+        `
+        team_id,
+        team_name,
+        season,
+        games,
+        plays,
+        pass_plays,
+        run_plays,
+        sacks_taken,
+        total_yards,
+        pass_yards,
+        rush_yards,
+        yards_per_play,
+        pass_yards_per_game,
+        rush_yards_per_game,
+        third_down_att,
+        third_down_conv,
+        third_down_pct
+      `
+      )
+      .eq("team_id", teamId);
 
     if (season) {
       query = query.eq("season", Number(season));
     }
 
+    // --------------------------
+    // EXECUTE + TYPE ASSERT HERE
+    // --------------------------
     const { data, error } = await query;
 
     if (error) {
@@ -53,17 +88,15 @@ export async function GET(request: Request) {
       );
     }
 
-    // Ensure rows is ALWAYS an array of valid objects
     return NextResponse.json({
       groupBy,
       season,
-      rows: Array.isArray(data) ? data : [],
+      rows: (data ?? []) as TeamOffenseRow[],
     });
   } catch (err: any) {
     console.error("advanced/offense GET error:", err);
-
     return NextResponse.json(
-      { error: "server_error", details: err.message },
+      { error: "server_error", details: String(err) },
       { status: 500 }
     );
   }

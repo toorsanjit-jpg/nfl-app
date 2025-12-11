@@ -1,24 +1,99 @@
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import type { TeamDefenseSummaryDTO } from "@/types/TeamDefenseSummary";
+import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 
-export function TeamDefenseSummary({ summary }: { summary: TeamDefenseSummaryDTO }) {
+export type TeamDefenseSummaryRow = {
+  team_id: string;
+  team_name: string | null;
+  season: number | null;
+  games: number | null;
+  plays_defended: number | null;
+  pass_plays_defended: number | null;
+  run_plays_defended: number | null;
+  sacks_made: number | null;
+  yards_allowed: number | null;
+  pass_yards_allowed: number | null;
+  rush_yards_allowed: number | null;
+  yards_per_play_allowed: number | null;
+  pass_yards_per_game_allowed: number | null;
+  rush_yards_per_game_allowed: number | null;
+  third_down_att_def: number | null;
+  third_down_conv_def: number | null;
+  third_down_pct_def: number | null;
+};
+
+function getBaseUrl() {
+  if (process.env.NEXT_PUBLIC_SITE_URL) return process.env.NEXT_PUBLIC_SITE_URL;
+  if (process.env.NEXT_PUBLIC_VERCEL_URL) return `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`;
+  return "http://localhost:3000";
+}
+
+async function fetchDefense(teamId: string): Promise<TeamDefenseSummaryRow | null> {
+  const base = getBaseUrl();
+
+  const res = await fetch(`${base}/api/teamDefenseSummary?teamId=${teamId}`, {
+    cache: "no-store",
+    next: { revalidate: 0 }
+  });
+
+  if (!res.ok) {
+    console.error("Failed to fetch defense summary:", await res.text());
+    return null;
+  }
+
+  const json = await res.json();
+  return json.summary ?? null;
+}
+
+export async function TeamDefenseSummary({ teamId }: { teamId: string }) {
+  const summary = await fetchDefense(teamId);
+
   if (!summary) {
     return (
       <Card>
         <CardHeader>
           <CardTitle>Defense Summary</CardTitle>
         </CardHeader>
-        <CardContent>No data available.</CardContent>
+        <CardContent>
+          <p className="text-sm text-gray-500">No defensive summary available.</p>
+        </CardContent>
       </Card>
     );
   }
 
+  const {
+    team_name,
+    season,
+    games,
+    plays_defended,
+    pass_plays_defended,
+    run_plays_defended,
+    sacks_made,
+    yards_allowed,
+    pass_yards_allowed,
+    rush_yards_allowed,
+    yards_per_play_allowed,
+    pass_yards_per_game_allowed,
+    rush_yards_per_game_allowed,
+    third_down_att_def,
+    third_down_conv_def,
+    third_down_pct_def
+  } = summary;
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{summary.team_name || summary.team_id} — Defense</CardTitle>
+    <Card className="mb-6">
+      <CardHeader className="flex flex-row items-center justify-between">
+        <div>
+          <CardTitle className="text-xl font-semibold">
+            {team_name || summary.team_id}
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Season {season ?? "-"} · {games ?? 0} games
+          </p>
+        </div>
+        <Badge variant="outline">Defense Overview</Badge>
       </CardHeader>
+
       <CardContent>
         <Table>
           <TableHeader>
@@ -28,14 +103,51 @@ export function TeamDefenseSummary({ summary }: { summary: TeamDefenseSummaryDTO
             </TableRow>
           </TableHeader>
           <TableBody>
-            <TableRow><TableCell>Plays Allowed</TableCell><TableCell className="text-right">{summary.plays_allowed}</TableCell></TableRow>
-            <TableRow><TableCell>Yards Allowed</TableCell><TableCell className="text-right">{summary.yards_allowed}</TableCell></TableRow>
-            <TableRow><TableCell>Pass Yards Allowed</TableCell><TableCell className="text-right">{summary.pass_yards_allowed}</TableCell></TableRow>
-            <TableRow><TableCell>Rush Yards Allowed</TableCell><TableCell className="text-right">{summary.rush_yards_allowed}</TableCell></TableRow>
-            <TableRow><TableCell>Sacks</TableCell><TableCell className="text-right">{summary.sacks}</TableCell></TableRow>
-            <TableRow><TableCell>Interceptions</TableCell><TableCell className="text-right">{summary.interceptions}</TableCell></TableRow>
-            <TableRow><TableCell>Fumbles Recovered</TableCell><TableCell className="text-right">{summary.fumbles_recovered}</TableCell></TableRow>
-            <TableRow><TableCell>Total Turnovers</TableCell><TableCell className="text-right">{summary.turnovers_forced}</TableCell></TableRow>
+            <TableRow>
+              <TableCell>Plays Defended</TableCell>
+              <TableCell className="text-right">{plays_defended ?? 0}</TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell>Pass / Run Defended</TableCell>
+              <TableCell className="text-right">
+                {(pass_plays_defended ?? 0)} / {(run_plays_defended ?? 0)}
+              </TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell>Yards Allowed</TableCell>
+              <TableCell className="text-right">{yards_allowed ?? 0}</TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell>Pass Yds/Game Allowed</TableCell>
+              <TableCell className="text-right">
+                {pass_yards_per_game_allowed?.toFixed(1) ?? "0.0"}
+              </TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell>Rush Yds/Game Allowed</TableCell>
+              <TableCell className="text-right">
+                {rush_yards_per_game_allowed?.toFixed(1) ?? "0.0"}
+              </TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell>Yards/Play Allowed</TableCell>
+              <TableCell className="text-right">
+                {yards_per_play_allowed?.toFixed(2) ?? "0.00"}
+              </TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell>Sacks Made</TableCell>
+              <TableCell className="text-right">{sacks_made ?? 0}</TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell>3rd Down Stops</TableCell>
+              <TableCell className="text-right">
+                {(third_down_conv_def ?? 0)}/{third_down_att_def ?? 0}
+                {typeof third_down_pct_def === "number"
+                  ? ` (${third_down_pct_def.toFixed(1)}%)`
+                  : ""}
+              </TableCell>
+            </TableRow>
           </TableBody>
         </Table>
       </CardContent>

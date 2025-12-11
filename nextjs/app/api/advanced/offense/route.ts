@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import type { Database } from "@/types/supabase";
 
-const supabase = createClient<Database>(
+const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
   { auth: { persistSession: false } }
@@ -44,12 +43,11 @@ export async function GET(req: Request) {
     }
 
     // --------------------------
-    // BASE QUERY (NO TYPING HERE)
+    // BASE QUERY (UN-TYPED)
     // --------------------------
     let query = supabase
       .from("team_offense_summary")
-      .select(
-        `
+      .select(`
         team_id,
         team_name,
         season,
@@ -67,17 +65,13 @@ export async function GET(req: Request) {
         third_down_att,
         third_down_conv,
         third_down_pct
-      `
-      )
+      `)
       .eq("team_id", teamId);
 
     if (season) {
       query = query.eq("season", Number(season));
     }
 
-    // --------------------------
-    // EXECUTE + TYPE ASSERT HERE
-    // --------------------------
     const { data, error } = await query;
 
     if (error) {

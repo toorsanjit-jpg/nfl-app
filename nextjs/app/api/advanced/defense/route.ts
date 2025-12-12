@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import type { TeamOffenseRow, AdvancedGroupBy } from "@/types/TeamAdvanced";
+import type { TeamDefenseRow, AdvancedGroupBy } from "@/types/TeamAdvanced";
 
-// IMPORTANT: service role client – server-only
+// service role client – server-only
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -20,7 +20,7 @@ export async function GET(req: Request) {
 
   try {
     let query = supabase
-      .from("team_offense_base_view")
+      .from("team_defense_base_view")
       .select("*");
 
     if (teamId) {
@@ -34,20 +34,17 @@ export async function GET(req: Request) {
       }
     }
 
-    // NOTE:
-    // For now, groupBy is "team" only and the view is already aggregated.
-    // Later we can add additional grouping modes or joins.
     const { data, error } = await query;
 
     if (error) {
-      console.error("advanced/offense db error:", error);
+      console.error("advanced/defense db error:", error);
       return NextResponse.json(
         { error: "db_error", details: error.message },
         { status: 500 }
       );
     }
 
-    const rows = (data ?? []) as TeamOffenseRow[];
+    const rows = (data ?? []) as TeamDefenseRow[];
 
     return NextResponse.json({
       groupBy,
@@ -55,7 +52,7 @@ export async function GET(req: Request) {
       rows,
     });
   } catch (err) {
-    console.error("advanced/offense GET error:", err);
+    console.error("advanced/defense GET error:", err);
     return NextResponse.json(
       { error: "server_error" },
       { status: 500 }

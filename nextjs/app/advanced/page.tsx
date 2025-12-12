@@ -17,7 +17,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import type { TeamOffenseRow } from "@/app/api/advanced/offense/route";
+import type { TeamOffenseRow } from "@/types/TeamAdvanced";
 
 export const dynamic = "force-dynamic";
 

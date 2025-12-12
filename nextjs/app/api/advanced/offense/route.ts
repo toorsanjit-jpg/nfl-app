@@ -2,12 +2,6 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { TeamOffenseRow, AdvancedGroupBy } from "@/types/TeamAdvanced";
 
-// IMPORTANT: service role client – server-only
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
 
@@ -17,6 +11,21 @@ export async function GET(req: Request) {
 
   const groupBy: AdvancedGroupBy =
     (groupByRaw as AdvancedGroupBy) || "team";
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  // If env vars are missing (e.g., during build without secrets), return a safe stub.
+  if (!supabaseUrl || !supabaseServiceKey) {
+    return NextResponse.json({
+      groupBy,
+      season: seasonParam ? Number(seasonParam) : null,
+      rows: [] as TeamOffenseRow[],
+      _meta: { missingSupabaseEnv: true },
+    });
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   try {
     let query = supabase

@@ -1,5 +1,6 @@
 // nextjs/app/api/teamAdvanced/special/route.ts
 import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
 export type TeamSpecialGroupBy = "total" | "week" | "phase";
 
@@ -29,6 +30,14 @@ export type TeamAdvancedSpecialResponse = {
   rows: TeamAdvancedSpecialRow[];
 };
 
+type Row = {
+  offense_team: string;
+  defense_team: string;
+  calc_play_result: string | null;
+  play_type: string | null;
+  games: { season: number | null; week: number | null } | null;
+};
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const teamId = searchParams.get("teamId");
@@ -48,20 +57,131 @@ export async function GET(req: Request) {
     ? (groupByRaw as TeamSpecialGroupBy)
     : "total";
 
-  const season = searchParams.get("season");
-  const phase = searchParams.get("phase");
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !supabaseServiceKey) {
+    return NextResponse.json({
+      groupBy,
+      rows: [] as TeamAdvancedSpecialRow[],
+      _meta: { missingSupabaseEnv: true },
+    });
+  }
 
-  const payload: TeamAdvancedSpecialResponse = {
-    groupBy,
-    rows: [],
-  };
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-  return NextResponse.json({
-    ...payload,
-    _meta: {
-      teamId,
+  try {
+    const season = searchParams.get("season");
+    const week = searchParams.get("week");
+    const phase = searchParams.get("phase");
+
+    let query = supabase
+      .from("nfl_plays")
+      .select(
+        `
+        offense_team,
+        defense_team,
+        calc_play_result,
+        play_type,
+        games!inner(season, week)
+      `
+      )
+      .or(`offense_team.eq.${teamId},defense_team.eq.${teamId}`);
+
+    if (season) query = query.eq("games.season", Number(season));
+    if (week) query = query.eq("games.week", Number(week));
+    if (phase) query = query.eq("calc_play_result", phase);
+
+    const { data, error } = await query;
+    if (error) {
+      console.error("teamAdvanced/special error:", error);
+      return NextResponse.json({
+        groupBy,
+        rows: [] as TeamAdvancedSpecialRow[],
+        _meta: { error: error.message },
+      });
+    }
+
+    const rows = aggregateTeamSpecial(teamId, data as any as Row[], groupBy);
+
+    return NextResponse.json({
+      groupBy,
+      rows,
+    });
+  } catch (err) {
+    console.error("teamAdvanced/special GET error:", err);
+    return NextResponse.json({
+      groupBy,
+      rows: [] as TeamAdvancedSpecialRow[],
+      _meta: { error: String(err) },
+    });
+  }
+}
+
+function aggregateTeamSpecial(
+  teamId: string,
+  data: Row[],
+  groupBy: TeamSpecialGroupBy
+): TeamAdvancedSpecialRow[] {
+  const grouped = new Map<string, Row[]>();
+  for (const row of data) {
+    const bucket =
+      groupBy === "week"
+        ? `Week ${row.games?.week ?? "-"}`
+        : groupBy === "phase"
+        ? row.calc_play_result ?? "unknown"
+        : "Totals";
+    if (!grouped.has(bucket)) grouped.set(bucket, []);
+    grouped.get(bucket)!.push(row);
+  }
+
+  const rows: TeamAdvancedSpecialRow[] = [];
+
+  for (const [bucket, list] of grouped.entries()) {
+    const plays = list.length;
+    const season = list[0]?.games?.season ?? null;
+    const week = list[0]?.games?.week ?? null;
+
+    const fg_att = list.filter((r) =>
+      (r.play_type ?? "").toLowerCase().includes("field goal")
+    ).length;
+    const punts = list.filter((r) => r.calc_play_result === "punt").length;
+    const kickoffs = list.filter(
+      (r) =>
+        r.calc_play_result === "kick" ||
+        (r.play_type ?? "").toLowerCase().includes("kickoff")
+    ).length;
+    const xp_att = list.filter((r) =>
+      (r.play_type ?? "").toLowerCase().includes("extra point")
+    ).length;
+
+    rows.push({
+      team_id: teamId,
+      label: bucket,
+      group_by: groupBy,
+      group_value:
+        groupBy === "week"
+          ? week != null
+            ? String(week)
+            : null
+          : groupBy === "phase"
+          ? bucket
+          : null,
       season,
-      phase,
-    },
-  });
+      games: null,
+      plays,
+      fg_att,
+      fg_made: null,
+      punts,
+      punt_yards: null,
+      kick_returns: null,
+      kick_return_yards: null,
+      punt_returns: null,
+      punt_return_yards: null,
+      kickoff_plays: kickoffs,
+      xp_att,
+      st_plays_total: plays,
+    } as any);
+  }
+
+  return rows;
 }

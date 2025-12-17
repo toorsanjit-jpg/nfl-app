@@ -1,13 +1,16 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import type { TeamSpecialSummaryDTO } from "@/types/TeamSpecialSummary";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { getSupabaseServerClient } from "@/lib/supabaseServer";
 
 export async function GET(req: Request) {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) {
+    return NextResponse.json(
+      { error: "Supabase is not configured", _meta: { missingSupabaseEnv: true } },
+      { status: 500 }
+    );
+  }
+
   const { searchParams } = new URL(req.url);
   const teamId = searchParams.get("teamId");
 

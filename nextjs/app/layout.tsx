@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Script from "next/script";
+import Providers from "./providers";
+import { createServerSupabase } from "@/lib/supabaseServer";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -18,22 +20,25 @@ export const metadata: Metadata = {
   description: "NFL Data + Stats App",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const supabase = createServerSupabase();
+  const {
+    data: { session: initialSession },
+  } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+
   return (
     <html lang="en">
       <head>
-        {/* Preline JS — required for dropdowns, tabs, modals, etc. */}
+        {/* Preline JS is required for dropdowns, tabs, modals, etc. */}
         <Script src="/preline.js" strategy="beforeInteractive" />
       </head>
 
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {children}
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        <Providers initialSession={initialSession}>{children}</Providers>
       </body>
     </html>
   );

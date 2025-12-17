@@ -1,6 +1,11 @@
-import { supabase } from "./supabaseClient";
+import { getSupabaseServerClient } from "./supabaseServer";
 
 export async function getTeamAggregates() {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) {
+    return [];
+  }
+
   const { data, error } = await supabase
     .from("team_game_stats")
     .select("*");

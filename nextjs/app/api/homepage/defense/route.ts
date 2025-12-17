@@ -1,11 +1,14 @@
 // app/api/homepage/defense/route.ts
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabaseClient";
+import { getSupabaseServerClient } from "@/lib/supabaseServer";
 
 export async function GET() {
-  const { data, error } = await supabase
-    .from("homepage_team_defense")
-    .select("*");
+  const supabase = getSupabaseServerClient();
+  if (!supabase) {
+    return NextResponse.json({ data: [], _meta: { missingSupabaseEnv: true } });
+  }
+
+  const { data, error } = await supabase.from("homepage_team_defense").select("*");
 
   if (error) {
     console.error("homepage_team_defense error", error);

@@ -1,6 +1,6 @@
 import axios from "axios";
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 // ----------------- Helpers -----------------
 
@@ -124,6 +124,7 @@ function toNum(value: any): number | null {
 // ----------------- Main handler -----------------
 
 export async function POST(request: Request) {
+  const supabaseAdmin = getSupabaseAdminClient();
   if (!supabaseAdmin) {
     return NextResponse.json(
       { error: "Missing Supabase admin credentials" },

@@ -1,7 +1,15 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabaseClient";
+import { getSupabaseServerClient } from "@/lib/supabaseServer";
 
 export async function GET(request: Request) {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) {
+    return NextResponse.json(
+      { error: "Supabase is not configured", _meta: { missingSupabaseEnv: true } },
+      { status: 500 }
+    );
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const gameId = searchParams.get("gameId");
@@ -53,4 +61,3 @@ export async function GET(request: Request) {
     );
   }
 }
-

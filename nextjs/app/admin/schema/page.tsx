@@ -1,6 +1,4 @@
 import { AdminSchemaBuilder } from "@/components/admin/AdminSchemaBuilder";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { getUserContextFromCookies } from "@/lib/auth";
 import { getBaseUrl } from "@/lib/urlHelpers";
 import type { AdminTableConfig } from "@/types/AdminTableConfig";
 import type { IntrospectedColumn } from "@/lib/supabaseIntrospect";
@@ -33,36 +31,6 @@ async function fetchColumns(): Promise<{ columns: IntrospectedColumn[]; missingE
 }
 
 export default async function AdminSchemaPage() {
-  const ctx = await getUserContextFromCookies();
-  if (!ctx.userId) {
-    return (
-      <div className="mx-auto max-w-3xl px-4 py-10">
-        <Card>
-          <CardHeader>
-            <CardTitle>Not authorized</CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            Please sign in as an admin.
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-  if (!ctx.isAdmin || !ctx.isPremium) {
-    return (
-      <div className="mx-auto max-w-3xl px-4 py-10">
-        <Card>
-          <CardHeader>
-            <CardTitle>Admin access required</CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            You must be an admin to use the schema builder.
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   const [{ configs, missingEnv: missingEnvConfigs }, { columns, missingEnv: missingEnvCols }] =
     await Promise.all([fetchConfigs(), fetchColumns()]);
 
@@ -71,16 +39,12 @@ export default async function AdminSchemaPage() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 space-y-4">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold">Schema Builder</h1>
+        <h1 className="text-2xl font-bold">Schema</h1>
         <p className="text-sm text-muted-foreground">
           Define admin tables, choose columns, and configure filters/formulas.
         </p>
       </div>
-      <AdminSchemaBuilder
-        initialConfigs={configs}
-        columns={columns}
-        missingEnv={missingEnv}
-      />
+      <AdminSchemaBuilder initialConfigs={configs} columns={columns} missingEnv={missingEnv} />
     </div>
   );
 }

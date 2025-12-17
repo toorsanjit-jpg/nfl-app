@@ -1,7 +1,7 @@
 "use server";
 
-import { supabase } from "@/lib/supabaseClient";
 import Link from "next/link";
+import { getSupabaseServerClient } from "@/lib/supabaseServer";
 
 type PlayExplorerProps = {
   searchParams: Promise<Record<string, string | undefined>>;
@@ -56,6 +56,19 @@ export default async function PlayExplorerPage({
 }: PlayExplorerProps) {
   // Next.js 16: searchParams is a Promise
   const sp = await searchParams;
+
+  const supabase = getSupabaseServerClient();
+  if (!supabase) {
+    return (
+      <div className="mx-auto max-w-4xl p-8">
+        <h1 className="text-2xl font-bold">Play Explorer</h1>
+        <p className="text-sm text-muted-foreground">
+          Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to enable this
+          page.
+        </p>
+      </div>
+    );
+  }
 
   const selectedTeam = sp.teamId || "";
   const selectedDown = sp.down || "";

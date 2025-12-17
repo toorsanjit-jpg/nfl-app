@@ -1,5 +1,6 @@
-import { cookies as nextCookies } from "next/headers";
-import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
+import type { SupabaseClient, User } from "@supabase/supabase-js";
+import { getSupabaseAdminClient } from "./supabaseAdmin";
+import { createRouteSupabase, createServerSupabase, hasSupabaseEnv } from "./supabaseServer";
 import type { UserTier } from "./userTier";
 
 export type UserContext = {
@@ -12,6 +13,8 @@ export type UserContext = {
   missingSupabaseEnv?: boolean;
 };
 
+const ADMIN_EMAIL = "toorsanjit@gmail.com";
+
 const DEFAULT_CONTEXT: UserContext = {
   user: null,
   userId: null,
@@ -21,193 +24,114 @@ const DEFAULT_CONTEXT: UserContext = {
   token: null,
 };
 
-type SupabaseCreds = {
-  url: string | null;
-  anonKey: string | null;
-  serviceKey: string | null;
+type ProfileFlags = {
+  isAdmin: boolean | null;
+  isPremium: boolean | null;
 };
-
-function getSupabaseCreds(): SupabaseCreds {
-  return {
-    url: process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || null,
-    anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || null,
-    serviceKey: process.env.SUPABASE_SERVICE_ROLE_KEY || null,
-  };
-}
-
-function extractTokenFromCookieHeader(cookieHeader: string | null): string | null {
-  if (!cookieHeader) return null;
-  const parts = cookieHeader.split(";");
-  for (const part of parts) {
-    const [rawKey, ...rest] = part.trim().split("=");
-    const key = rawKey?.trim();
-    if (!key) continue;
-    if (key === "sb-access-token" || key === "supabase-auth-token") {
-      return decodeURIComponent(rest.join("="));
-    }
-  }
-  return null;
-}
-
-function getTokenFromRequest(req: Request): string | null {
-  const authHeader =
-    req.headers.get("authorization") || req.headers.get("Authorization");
-  if (authHeader && authHeader.toLowerCase().startsWith("bearer ")) {
-    return authHeader.slice("bearer ".length);
-  }
-  return extractTokenFromCookieHeader(req.headers.get("cookie"));
-}
-
-async function getTokenFromCookiesStore(): Promise<string | null> {
-  try {
-    const store = await nextCookies();
-    return (
-      store.get("sb-access-token")?.value ||
-      store.get("supabase-auth-token")?.value ||
-      null
-    );
-  } catch {
-    return null;
-  }
-}
 
 function deriveTier(user: User | null, isPremium: boolean): UserTier {
   if (!user) return "anonymous";
   return isPremium ? "premium" : "free";
 }
 
-function buildClient(
-  url: string,
-  key: string,
-  token: string | null
-): SupabaseClient {
-  const options = token
-    ? {
-        global: {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      }
-    : undefined;
-  return createClient(url, key, options);
+function adminFromMetadata(user: User | null, profileIsAdmin?: boolean | null) {
+  if (!user) return false;
+  if (user.email?.toLowerCase() === ADMIN_EMAIL) return true;
+  const meta = (user.user_metadata || {}) as Record<string, any>;
+  const appMeta = (user.app_metadata || {}) as Record<string, any>;
+  if (meta.is_admin === true || meta.is_admin === "true") return true;
+  if (appMeta.is_admin === true || appMeta.is_admin === "true") return true;
+  if (profileIsAdmin != null) return Boolean(profileIsAdmin);
+  return false;
 }
 
-async function fetchProfileIsPremium(
-  client: SupabaseClient,
+function premiumFromMetadata(
+  user: User | null,
+  profileIsPremium?: boolean | null
+) {
+  if (profileIsPremium != null) return Boolean(profileIsPremium);
+  if (!user) return false;
+  const meta = (user.user_metadata || {}) as Record<string, any>;
+  const appMeta = (user.app_metadata || {}) as Record<string, any>;
+  if (meta.is_premium != null) return Boolean(meta.is_premium);
+  if (appMeta.is_premium != null) return Boolean(appMeta.is_premium);
+  return false;
+}
+
+async function fetchProfileFlags(
+  client: SupabaseClient | null,
   userId: string
-): Promise<boolean | null> {
+): Promise<ProfileFlags> {
+  if (!client) return { isAdmin: null, isPremium: null };
   try {
     const { data, error } = await client
       .from("profiles")
-      .select("is_premium")
+      .select("is_admin,is_premium")
       .eq("id", userId)
       .maybeSingle();
     if (error) {
       console.warn("profile lookup error:", error.message);
-      return null;
+      return { isAdmin: null, isPremium: null };
     }
-    return data?.is_premium ?? null;
+    const record = data as any;
+    return {
+      isAdmin: record?.is_admin ?? null,
+      isPremium: record?.is_premium ?? null,
+    };
   } catch (err) {
     console.warn("profile lookup exception:", err);
-    return null;
+    return { isAdmin: null, isPremium: null };
   }
 }
 
-async function fetchProfileIsAdmin(
-  client: SupabaseClient,
-  userId: string
-): Promise<boolean | null> {
-  try {
-    const { data, error } = await client
-      .from("profiles")
-      .select("is_admin")
-      .eq("id", userId)
-      .maybeSingle();
-    if (error) {
-      console.warn("profile admin lookup error:", error.message);
-      return null;
-    }
-    return data?.is_admin ?? null;
-  } catch (err) {
-    console.warn("profile admin lookup exception:", err);
-    return null;
-  }
-}
-
-async function resolveUserContext(
-  token: string | null,
-  creds: SupabaseCreds
+async function buildContextFromClient(
+  supabase: SupabaseClient | null
 ): Promise<UserContext> {
-  if (!creds.url || !creds.anonKey) {
-    return { ...DEFAULT_CONTEXT, missingSupabaseEnv: true };
-  }
+  if (!supabase) return { ...DEFAULT_CONTEXT, missingSupabaseEnv: true };
 
-  if (!token) {
+  const { data, error } = await supabase.auth.getSession();
+  if (error) {
     return { ...DEFAULT_CONTEXT, token: null };
   }
 
-  const supabase = buildClient(creds.url, creds.anonKey, token);
-  const { data: authData, error: authError } = await supabase.auth.getUser(token);
-  if (authError || !authData?.user) {
-    return {
-      ...DEFAULT_CONTEXT,
-      token,
-      user: null,
-      userId: null,
-      tier: "anonymous",
-    };
+  const session = data.session;
+  const user = session?.user ?? null;
+  const userId = user?.id ?? null;
+  const token = session?.access_token ?? null;
+
+  let profileFlags: ProfileFlags = { isAdmin: null, isPremium: null };
+  if (userId) {
+    const profileClient = getSupabaseAdminClient() ?? supabase;
+    profileFlags = await fetchProfileFlags(profileClient, userId);
   }
 
-  const user = authData.user;
-  const userId = user.id;
-
-  let isPremium =
-    Boolean(
-      (user.app_metadata as any)?.is_premium ??
-        (user.user_metadata as any)?.is_premium
-    );
-  let isAdmin =
-    Boolean(
-      (user.app_metadata as any)?.is_admin ??
-        (user.user_metadata as any)?.is_admin
-    );
-
-  if (creds.serviceKey) {
-    const adminClient = buildClient(creds.url, creds.serviceKey, token);
-    const profilePremium = await fetchProfileIsPremium(adminClient, userId);
-    const profileAdmin = await fetchProfileIsAdmin(adminClient, userId);
-    if (profilePremium != null) isPremium = profilePremium;
-    if (profileAdmin != null) isAdmin = profileAdmin;
-  } else {
-    const profilePremium = await fetchProfileIsPremium(supabase, userId);
-    const profileAdmin = await fetchProfileIsAdmin(supabase, userId);
-    if (profilePremium != null) isPremium = profilePremium;
-    if (profileAdmin != null) isAdmin = profileAdmin;
-  }
+  const isAdmin = adminFromMetadata(user, profileFlags.isAdmin);
+  const isPremium = premiumFromMetadata(user, profileFlags.isPremium);
+  const tier = deriveTier(user, isPremium);
 
   return {
     user,
     userId,
     isPremium,
     isAdmin,
-    tier: deriveTier(user, isPremium),
+    tier,
     token,
   };
 }
 
 export async function getUserContextFromRequest(
-  req: Request
+  _req: Request
 ): Promise<UserContext> {
-  const creds = getSupabaseCreds();
-  const token = getTokenFromRequest(req);
-  return resolveUserContext(token, creds);
+  if (!hasSupabaseEnv()) {
+    return { ...DEFAULT_CONTEXT, missingSupabaseEnv: true };
+  }
+  const supabase = createRouteSupabase();
+  return buildContextFromClient(supabase);
 }
 
 export async function getUserContextFromCookies(): Promise<UserContext> {
-  const creds = getSupabaseCreds();
-  const token = await getTokenFromCookiesStore();
-  return resolveUserContext(token, creds);
+  const supabase = createServerSupabase();
+  return buildContextFromClient(supabase);
 }
 
 export function getAdvancedPermissions(ctx: UserContext) {
@@ -215,7 +139,7 @@ export function getAdvancedPermissions(ctx: UserContext) {
   const canUseSavedViews = ctx.isPremium;
   const canUseFullFilters = ctx.isPremium;
   const canAccessTeamAdvanced = ctx.isPremium;
-  const isAdmin = ctx.isAdmin && ctx.isPremium;
+  const isAdmin = ctx.isAdmin;
 
   return {
     ...ctx,
@@ -225,4 +149,22 @@ export function getAdvancedPermissions(ctx: UserContext) {
     canAccessTeamAdvanced,
     isAdmin,
   };
+}
+
+export function isAdminUser(user: User | null) {
+  return adminFromMetadata(user);
+}
+
+export async function requireAdmin() {
+  const ctx = await getUserContextFromCookies();
+  if (ctx.missingSupabaseEnv) {
+    return { authorized: false, redirectTo: "/login", ctx, reason: "missing-env" as const };
+  }
+  if (!ctx.userId) {
+    return { authorized: false, redirectTo: "/login", ctx, reason: "unauthenticated" as const };
+  }
+  if (!ctx.isAdmin) {
+    return { authorized: false, redirectTo: "/", ctx, reason: "not-admin" as const };
+  }
+  return { authorized: true, ctx };
 }

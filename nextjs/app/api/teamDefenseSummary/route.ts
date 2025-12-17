@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabaseClient";
+import { getSupabaseServerClient } from "@/lib/supabaseServer";
 
 export type TeamDefenseSummaryRow = {
   team_id: string;
@@ -22,6 +22,14 @@ export type TeamDefenseSummaryRow = {
 };
 
 export async function GET(req: Request) {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) {
+    return NextResponse.json(
+      { error: "Supabase is not configured", _meta: { missingSupabaseEnv: true } },
+      { status: 500 }
+    );
+  }
+
   const { searchParams } = new URL(req.url);
   const teamId = searchParams.get("teamId");
 

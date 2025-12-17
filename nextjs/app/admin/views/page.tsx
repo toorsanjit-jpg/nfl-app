@@ -1,6 +1,4 @@
 import { AdminViewsManager } from "@/components/admin/AdminViewsManager";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { getUserContextFromCookies } from "@/lib/auth";
 import { getBaseUrl } from "@/lib/urlHelpers";
 import type { AdminSavedView } from "@/types/AdminSavedView";
 import type { AdminTableConfig } from "@/types/AdminTableConfig";
@@ -31,22 +29,6 @@ async function fetchConfigs() {
 }
 
 export default async function AdminViewsPage() {
-  const ctx = await getUserContextFromCookies();
-  if (!ctx.userId || !ctx.isAdmin || !ctx.isPremium) {
-    return (
-      <div className="mx-auto max-w-3xl px-4 py-10">
-        <Card>
-          <CardHeader>
-            <CardTitle>Not authorized</CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            Admin access required to manage saved views.
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   const [{ views, missingEnv: missingEnvViews }, { configs, missingEnv: missingEnvCfg }] =
     await Promise.all([fetchViews(), fetchConfigs()]);
 

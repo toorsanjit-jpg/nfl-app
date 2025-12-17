@@ -1,5 +1,5 @@
-import { supabase } from "@/lib/supabaseClient";
 import Link from "next/link";
+import { getSupabaseServerClient } from "@/lib/supabaseServer";
 
 type PlayerPageProps = {
   params: Promise<{ playerId: string }>;
@@ -8,6 +8,15 @@ type PlayerPageProps = {
 export default async function PlayerPage({ params }: PlayerPageProps) {
   // Next.js 16: params is a Promise, so we must await it
   const { playerId } = await params;
+  const supabase = getSupabaseServerClient();
+
+  if (!supabase) {
+    return (
+      <div className="p-10 text-xl">
+        Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.
+      </div>
+    );
+  }
 
   // 1) Load basic player info
   const { data: player, error: playerError } = await supabase
@@ -229,4 +238,3 @@ export default async function PlayerPage({ params }: PlayerPageProps) {
     </div>
   );
 }
-

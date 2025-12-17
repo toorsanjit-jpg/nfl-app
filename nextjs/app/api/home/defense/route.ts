@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabaseClient";
+import { getSupabaseServerClient } from "@/lib/supabaseServer";
 
 export async function GET() {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) {
+    return NextResponse.json({ rows: [], _meta: { missingSupabaseEnv: true } });
+  }
+
   const { data, error } = await supabase
     .from("team_defense_base_view")
     .select("*");

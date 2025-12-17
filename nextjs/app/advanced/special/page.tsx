@@ -11,8 +11,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { pillHref } from "@/lib/urlHelpers";
-import type { TeamDefenseRow } from "@/types/TeamAdvanced";
+import { pillHref, getBaseUrl } from "@/lib/urlHelpers";
 import { SavedViewsDropdown } from "@/components/saved/SavedViewsDropdown";
 import { LockedFeature } from "@/components/premium/LockedFeature";
 import {
@@ -20,63 +19,85 @@ import {
   getUserContextFromCookies,
 } from "@/lib/auth";
 
-type AdvancedDefenseResponse = {
+type SpecialRow = {
+  team_id: string;
+  team_name: string | null;
+  season: number | null;
+  week: number | null;
+  plays: number;
+  punts: number;
+  kickoffs: number;
+  field_goals: number;
+  extra_points: number;
+};
+
+type AdvancedSpecialResponse = {
   season: number | null;
   week: number | null;
   filters: { playType: string; shotgun: boolean; noHuddle: boolean };
-  rows: TeamDefenseRow[];
-  _meta?: { missingSupabaseEnv?: true; error?: string };
+  rows: SpecialRow[];
+  _meta?: { missingSupabaseEnv?: true; error?: string; restricted?: boolean };
 };
 
-function getBaseUrl() {
-  if (process.env.NEXT_PUBLIC_SITE_URL) return process.env.NEXT_PUBLIC_SITE_URL;
-  if (process.env.NEXT_PUBLIC_VERCEL_URL) {
-    return `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`;
-  }
-  return "http://localhost:3000";
-}
+export const dynamic = "force-dynamic";
 
-async function fetchAdvancedDefense(
+type AdvancedSpecialPageProps = {
+  searchParams: { [key: string]: string | string[] | undefined };
+};
+
+async function fetchAdvancedSpecial(
   params: URLSearchParams
-): Promise<AdvancedDefenseResponse> {
+): Promise<AdvancedSpecialResponse> {
   const base = getBaseUrl();
-  const res = await fetch(`${base}/api/advanced/defense?${params.toString()}`, {
+  const res = await fetch(`${base}/api/advanced/special?${params.toString()}`, {
     cache: "no-store",
     next: { revalidate: 0 },
   });
 
+  let json: AdvancedSpecialResponse | null = null;
+  try {
+    json = (await res.json()) as AdvancedSpecialResponse;
+  } catch (err) {
+    console.error("Failed to parse advanced special response:", err);
+  }
+
   if (!res.ok) {
-    console.error("Failed to fetch advanced defense:", await res.text());
     return {
-      rows: [],
-      season: null,
-      week: null,
-      filters: { playType: "all", shotgun: false, noHuddle: false },
+      rows: json?.rows ?? [],
+      season: json?.season ?? null,
+      week: json?.week ?? null,
+      filters:
+        json?.filters ?? { playType: "all", shotgun: false, noHuddle: false },
+      _meta: {
+        ...(json?._meta || {}),
+        error: json?._meta?.error ?? `HTTP ${res.status}`,
+      },
     };
   }
 
-  const json = (await res.json()) as AdvancedDefenseResponse;
+  const safe = json ?? {
+    rows: [],
+    season: null,
+    week: null,
+    filters: { playType: "all", shotgun: false, noHuddle: false },
+  };
 
   return {
-    rows: json.rows ?? [],
-    season: json.season ?? null,
-    week: json.week ?? null,
-    filters: json.filters ?? {
+    rows: safe.rows ?? [],
+    season: safe.season ?? null,
+    week: safe.week ?? null,
+    filters: safe.filters ?? {
       playType: "all",
       shotgun: false,
       noHuddle: false,
     },
-    _meta: json._meta,
+    _meta: safe._meta,
   };
 }
 
-type AdvancedDefensePageProps = {
-  searchParams: { [key: string]: string | string[] | undefined };
-};
-
-export default async function AdvancedDefensePage({
+export default async function AdvancedSpecialPage({
   searchParams,
-}: AdvancedDefensePageProps) {
+}: AdvancedSpecialPageProps) {
   const userCtx = await getUserContextFromCookies();
   const perms = getAdvancedPermissions(userCtx);
 
@@ -89,7 +110,7 @@ export default async function AdvancedDefensePage({
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <p className="text-muted-foreground">
-              Sign in and upgrade to unlock defense filters, saved views, and team-level breakdowns.
+              Sign in and upgrade to unlock special teams filters, saved views, and team-level detail.
             </p>
             <div className="flex gap-2">
               <Button asChild>
@@ -141,12 +162,13 @@ export default async function AdvancedDefensePage({
   if (effectiveShotgun) params.set("shotgun", "true");
   if (effectiveNoHuddle) params.set("noHuddle", "true");
 
-  const { rows, season, week, filters } = await fetchAdvancedDefense(params);
+  const { rows, season, week, filters } = await fetchAdvancedSpecial(params);
   const appliedPlayType = filters?.playType ?? effectivePlayType;
   const appliedShotgun = filters?.shotgun ?? effectiveShotgun;
   const appliedNoHuddle = filters?.noHuddle ?? effectiveNoHuddle;
   const appliedWeek = effectiveWeek;
-  const basePath = "/advanced/defense";
+
+  const basePath = "/advanced/special";
   const weekOptions = Array.from({ length: 22 }, (_, i) =>
     (i + 1).toString()
   );
@@ -167,15 +189,15 @@ export default async function AdvancedDefensePage({
         <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
             <CardTitle className="text-xl font-semibold">
-              League Defense — Advanced Team Summary
+              League Special Teams — Advanced Summary
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              {season ? `Season ${season}` : "Latest season"} •{" "}
-              {week ? `Week ${week}` : "All weeks"} • {rows.length} team rows
+              {season ? `Season ${season}` : "Latest season"} ·{" "}
+              {week ? `Week ${week}` : "All weeks"} · {rows.length} team rows
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">Team Defense</Badge>
+            <Badge variant="outline">Special Teams</Badge>
           </div>
         </CardHeader>
 
@@ -183,7 +205,7 @@ export default async function AdvancedDefensePage({
           <SavedViewsDropdown
             basePath={basePath}
             scope="league"
-            category="defense"
+            category="special"
             currentFilters={currentFilterState}
             tier={perms.tier}
           />
@@ -328,24 +350,21 @@ export default async function AdvancedDefensePage({
                 <TableRow>
                   <TableHead>Team</TableHead>
                   <TableHead className="text-center">Season</TableHead>
-                  <TableHead className="text-center">Games</TableHead>
-                  <TableHead className="text-center">Plays Def</TableHead>
-                  <TableHead className="text-center">Pass / Run</TableHead>
-                  <TableHead className="text-right">Yds Allowed</TableHead>
-                  <TableHead className="text-right">Yds/Play</TableHead>
-                  <TableHead className="text-right">Pass/G</TableHead>
-                  <TableHead className="text-right">Rush/G</TableHead>
-                  <TableHead className="text-right">3D% Allowed</TableHead>
+                  <TableHead className="text-center">Plays</TableHead>
+                  <TableHead className="text-center">Punts</TableHead>
+                  <TableHead className="text-center">Kickoffs</TableHead>
+                  <TableHead className="text-center">FG</TableHead>
+                  <TableHead className="text-center">XP</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {rows.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={10}
+                      colSpan={7}
                       className="py-6 text-center text-sm text-muted-foreground"
                     >
-                      No team defense data available for the current filters.
+                      No special teams data available for the current filters.
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -363,37 +382,19 @@ export default async function AdvancedDefensePage({
                         {row.season ?? "-"}
                       </TableCell>
                       <TableCell className="text-center">
-                        {row.games ?? 0}
+                        {row.plays ?? 0}
                       </TableCell>
                       <TableCell className="text-center">
-                        {row.plays_defended ?? 0}
+                        {row.punts ?? 0}
                       </TableCell>
                       <TableCell className="text-center">
-                        {(row.pass_plays_defended ?? 0)}/
-                        {row.run_plays_defended ?? 0}
+                        {row.kickoffs ?? 0}
                       </TableCell>
-                      <TableCell className="text-right">
-                        {row.yards_allowed ?? 0}
+                      <TableCell className="text-center">
+                        {row.field_goals ?? 0}
                       </TableCell>
-                      <TableCell className="text-right">
-                        {typeof row.yards_per_play_allowed === "number"
-                          ? row.yards_per_play_allowed.toFixed(2)
-                          : "0.00"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {typeof row.pass_yards_per_game_allowed === "number"
-                          ? row.pass_yards_per_game_allowed.toFixed(1)
-                          : "0.0"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {typeof row.rush_yards_per_game_allowed === "number"
-                          ? row.rush_yards_per_game_allowed.toFixed(1)
-                          : "0.0"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {typeof row.third_down_pct_def === "number"
-                          ? `${row.third_down_pct_def.toFixed(1)}%`
-                          : "-"}
+                      <TableCell className="text-center">
+                        {row.extra_points ?? 0}
                       </TableCell>
                     </TableRow>
                   ))

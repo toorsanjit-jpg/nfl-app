@@ -9,7 +9,13 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { getBaseUrl, pillHref } from "@/lib/urlHelpers";
+import { SavedViewsDropdown } from "@/components/saved/SavedViewsDropdown";
+import {
+  getAdvancedPermissions,
+  getUserContextFromCookies,
+} from "@/lib/auth";
 import type {
   TeamAdvancedDefenseResponse,
   TeamAdvancedDefenseRow,
@@ -42,19 +48,46 @@ async function fetchTeamDefense(
     }
   );
 
-  if (!res.ok) {
-    console.error(
-      "Failed to fetch team advanced defense:",
-      res.status,
-      await res.text()
-    );
-    return { groupBy: "total", rows: [] };
+  let json: TeamAdvancedDefenseResponse | null = null;
+  try {
+    json = (await res.json()) as TeamAdvancedDefenseResponse;
+  } catch (err) {
+    console.error("team advanced defense parse error:", err);
   }
 
-  const json = (await res.json()) as TeamAdvancedDefenseResponse;
+  if (!res.ok) {
+    const restricted =
+      res.status === 401 || res.status === 403 || json?._meta?.restricted;
+    return {
+      groupBy: json?.groupBy ?? "total",
+      rows: json?.rows ?? [],
+      season: json?.season ?? null,
+      week: json?.week ?? null,
+      filters:
+        json?.filters ?? { playType: "all", shotgun: false, noHuddle: false },
+      _meta: { ...(json?._meta || {}), ...(restricted ? { restricted: true } : {}) },
+    };
+  }
+
+  const safe = json ?? {
+    groupBy: "total",
+    rows: [],
+    season: null,
+    week: null,
+    filters: { playType: "all", shotgun: false, noHuddle: false },
+  };
   return {
-    groupBy: json.groupBy ?? "total",
-    rows: json.rows ?? [],
+    groupBy: safe.groupBy ?? "total",
+    rows: safe.rows ?? [],
+    season: safe.season ?? null,
+    week: safe.week ?? null,
+    filters:
+      safe.filters ?? {
+        playType: "all",
+        shotgun: false,
+        noHuddle: false,
+      },
+    _meta: safe._meta,
   };
 }
 
@@ -63,41 +96,106 @@ export default async function TeamDefensePage({
   searchParams,
 }: PageProps) {
   const teamId = params.teamId;
+  const userCtx = await getUserContextFromCookies();
+  const perms = getAdvancedPermissions(userCtx);
 
-  const urlParams = new URLSearchParams();
-  urlParams.set("teamId", teamId);
+  if (!perms.canAccessTeamAdvanced) {
+    return (
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 py-10">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">
+              Premium required for team advanced defense
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <p className="text-muted-foreground">
+              Upgrade to unlock team-level defense splits and saved views.
+            </p>
+            <div className="flex gap-2">
+              <Button asChild>
+                <Link href="/premium">Upgrade</Link>
+              </Button>
+              <Button variant="outline" asChild>
+                <Link href={`/teams/${encodeURIComponent(teamId)}`}>
+                  Back to overview
+                </Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   const seasonRaw =
-    typeof searchParams.season === "string" ? searchParams.season : undefined;
-  if (seasonRaw) urlParams.set("season", seasonRaw);
-
-  const downRaw =
-    typeof searchParams.down === "string" ? searchParams.down : undefined;
-  if (downRaw) urlParams.set("down", downRaw);
-
-  const quarterRaw =
-    typeof searchParams.quarter === "string"
-      ? searchParams.quarter
-      : undefined;
-  if (quarterRaw) urlParams.set("quarter", quarterRaw);
-
-  const playResultRaw =
-    typeof searchParams.playResult === "string"
-      ? searchParams.playResult
-      : undefined;
-  if (playResultRaw) urlParams.set("playResult", playResultRaw);
-
+    typeof searchParams.season === "string" ? searchParams.season : "";
+  const weekRaw =
+    typeof searchParams.week === "string" ? searchParams.week : "all";
+  const playTypeRaw =
+    typeof searchParams.playType === "string" ? searchParams.playType : "all";
+  const shotgunRaw =
+    typeof searchParams.shotgun === "string" ? searchParams.shotgun : "false";
+  const noHuddleRaw =
+    typeof searchParams.noHuddle === "string"
+      ? searchParams.noHuddle
+      : "false";
   const groupByRaw =
     typeof searchParams.groupBy === "string"
       ? searchParams.groupBy
       : undefined;
   const groupBy = normalizeGroupBy(groupByRaw);
+
+  const normalizedPlayType = ["pass", "run", "sack"].includes(playTypeRaw)
+    ? playTypeRaw
+    : "all";
+  const normalizedWeek =
+    weekRaw && weekRaw !== "all" && !Number.isNaN(Number(weekRaw))
+      ? weekRaw
+      : "all";
+  const shotgun = shotgunRaw === "true";
+  const noHuddle = noHuddleRaw === "true";
+
+  const urlParams = new URLSearchParams();
+  urlParams.set("teamId", teamId);
   urlParams.set("groupBy", groupBy);
+  if (seasonRaw) urlParams.set("season", seasonRaw);
+  if (normalizedWeek !== "all") urlParams.set("week", normalizedWeek);
+  if (normalizedPlayType !== "all") urlParams.set("playType", normalizedPlayType);
+  if (shotgun) urlParams.set("shotgun", "true");
+  if (noHuddle) urlParams.set("noHuddle", "true");
 
   const data = await fetchTeamDefense(teamId, urlParams);
   const rows = data.rows ?? [];
+  const currentSeason = data.season ?? (seasonRaw ? Number(seasonRaw) : null);
+  const currentWeek =
+    data.week ??
+    (normalizedWeek && normalizedWeek !== "all"
+      ? Number(normalizedWeek)
+      : null);
+  const currentPlayType =
+    data.filters?.playType ?? normalizedPlayType ?? "all";
+  const currentShotgun =
+    data.filters?.shotgun ?? shotgun;
+  const currentNoHuddle =
+    data.filters?.noHuddle ?? noHuddle;
 
   const basePath = `/teams/${encodeURIComponent(teamId)}/defense`;
+  const weekOptions = Array.from({ length: 22 }, (_, i) =>
+    (i + 1).toString()
+  );
+  const seasonOptions = Array.from({ length: 5 }, (_, i) =>
+    ((currentSeason ?? new Date().getFullYear()) - i).toString()
+  );
+  const currentFilterState = {
+    teamId,
+    groupBy,
+    ...(seasonRaw ? { season: seasonRaw } : {}),
+    ...(normalizedWeek !== "all" ? { week: normalizedWeek } : {}),
+    ...(currentPlayType !== "all" ? { playType: currentPlayType } : {}),
+    ...(currentShotgun ? { shotgun: true } : {}),
+    ...(currentNoHuddle ? { noHuddle: true } : {}),
+  };
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-6 md:px-8">
@@ -105,10 +203,11 @@ export default async function TeamDefensePage({
         <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
             <CardTitle className="text-xl font-semibold">
-              {teamId.toUpperCase()} – Defense (Team Advanced)
+              {teamId.toUpperCase()} — Defense (Team Advanced)
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              {seasonRaw ? `Season ${seasonRaw}` : "All seasons"} ·{" "}
+              {currentSeason ? `Season ${currentSeason}` : "Latest season"} •{" "}
+              {currentWeek ? `Week ${currentWeek}` : "All weeks"} •{" "}
               {rows.length} group rows
             </p>
           </div>
@@ -117,7 +216,14 @@ export default async function TeamDefensePage({
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Group-by selector */}
+          <SavedViewsDropdown
+            basePath={basePath}
+            scope="team"
+            teamId={teamId}
+            category="defense"
+            currentFilters={currentFilterState}
+            tier={perms.tier}
+          />
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="font-semibold text-muted-foreground">Group by:</span>
             {[
@@ -144,90 +250,126 @@ export default async function TeamDefensePage({
             ))}
           </div>
 
-          {/* Filter pills row */}
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            {/* Down */}
-            <span className="font-semibold text-muted-foreground">Down:</span>
-            <Link
-              href={pillHref(basePath, urlParams, "down", null)}
-              className={`rounded-full border px-3 py-1 ${
-                !downRaw ? "bg-primary text-primary-foreground" : "bg-background"
-              }`}
-            >
-              All
-            </Link>
-            {[1, 2, 3, 4].map((d) => (
-              <Link
-                key={d}
-                href={pillHref(basePath, urlParams, "down", String(d))}
-                className={`rounded-full border px-3 py-1 ${
-                  downRaw === String(d)
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-background"
-                }`}
-              >
-                {d}
-              </Link>
-            ))}
+          <div className="flex flex-wrap items-center gap-3 text-xs">
+            <form className="flex flex-wrap items-center gap-3" method="get">
+              <input type="hidden" name="groupBy" value={groupBy} />
+              <input type="hidden" name="playType" value={currentPlayType} />
+              <input
+                type="hidden"
+                name="shotgun"
+                value={currentShotgun ? "true" : "false"}
+              />
+              <input
+                type="hidden"
+                name="noHuddle"
+                value={currentNoHuddle ? "true" : "false"}
+              />
 
-            {/* Quarter */}
-            <span className="ml-4 font-semibold text-muted-foreground">
-              Quarter:
-            </span>
-            <Link
-              href={pillHref(basePath, urlParams, "quarter", null)}
-              className={`rounded-full border px-3 py-1 ${
-                !quarterRaw
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-background"
-              }`}
-            >
-              All
-            </Link>
-            {[1, 2, 3, 4].map((q) => (
-              <Link
-                key={q}
-                href={pillHref(basePath, urlParams, "quarter", String(q))}
-                className={`rounded-full border px-3 py-1 ${
-                  quarterRaw === String(q)
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-background"
-                }`}
-              >
-                Q{q}
-              </Link>
-            ))}
+              <label className="flex items-center gap-2">
+                <span className="text-muted-foreground">Season</span>
+                <select
+                  name="season"
+                  defaultValue={seasonRaw}
+                  className="rounded-md border px-2 py-1"
+                >
+                  <option value="">Latest</option>
+                  {seasonOptions.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-            {/* Play type */}
-            <span className="ml-4 font-semibold text-muted-foreground">
-              Type:
-            </span>
-            <Link
-              href={pillHref(basePath, urlParams, "playResult", null)}
-              className={`rounded-full border px-3 py-1 ${
-                !playResultRaw
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-background"
-              }`}
-            >
-              All
-            </Link>
-            {["pass", "run", "sack", "other"].map((kind) => (
+              <label className="flex items-center gap-2">
+                <span className="text-muted-foreground">Week</span>
+                <select
+                  name="week"
+                  defaultValue={normalizedWeek}
+                  className="rounded-md border px-2 py-1"
+                >
+                  <option value="all">All</option>
+                  {weekOptions.map((w) => (
+                    <option key={w} value={w}>
+                      {w}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <Button type="submit" size="sm" variant="outline">
+                Apply
+              </Button>
+            </form>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold text-muted-foreground">
+                Play type:
+              </span>
+              {[
+                { key: "all", label: "All" },
+                { key: "pass", label: "Pass" },
+                { key: "run", label: "Run" },
+                { key: "sack", label: "Sack" },
+              ].map((p) => (
+                <Link
+                  key={p.key}
+                  href={pillHref(
+                    basePath,
+                    urlParams,
+                    "playType",
+                    p.key === "all" ? null : p.key
+                  )}
+                  className={`rounded-full border px-3 py-1 ${
+                    currentPlayType === p.key
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-background"
+                  }`}
+                >
+                  {p.label}
+                </Link>
+              ))}
+
+              <span className="ml-4 font-semibold text-muted-foreground">
+                Shotgun:
+              </span>
               <Link
-                key={kind}
-                href={pillHref(basePath, urlParams, "playResult", kind)}
-                className={`rounded-full border px-3 py-1 capitalize ${
-                  playResultRaw === kind
+                href={pillHref(
+                  basePath,
+                  urlParams,
+                  "shotgun",
+                  currentShotgun ? null : "true"
+                )}
+                className={`rounded-full border px-3 py-1 ${
+                  currentShotgun
                     ? "bg-primary text-primary-foreground"
                     : "bg-background"
                 }`}
               >
-                {kind}
+                {currentShotgun ? "On" : "Off"}
               </Link>
-            ))}
+
+              <span className="font-semibold text-muted-foreground">
+                No-huddle:
+              </span>
+              <Link
+                href={pillHref(
+                  basePath,
+                  urlParams,
+                  "noHuddle",
+                  currentNoHuddle ? null : "true"
+                )}
+                className={`rounded-full border px-3 py-1 ${
+                  currentNoHuddle
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background"
+                }`}
+              >
+                {currentNoHuddle ? "On" : "Off"}
+              </Link>
+            </div>
           </div>
 
-          {/* Results table */}
           <div className="overflow-x-auto rounded-xl border">
             <Table>
               <TableHeader>

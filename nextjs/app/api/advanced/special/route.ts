@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import type { TeamDefenseRow } from "@/types/TeamAdvanced";
 import {
   applyPlayTypeFilter,
   applyTierFilters,
@@ -9,21 +8,32 @@ import {
 } from "@/lib/advancedFilters";
 import { getUserContextFromRequest } from "@/lib/auth";
 
-type Row = TeamDefenseRow & {
-  season: number | null;
-  week?: number | null;
-  result_yards?: number | null;
+type Row = {
+  offense_team: string | null;
+  play_type: string | null;
+  calc_play_result: string | null;
   calc_is_pass?: boolean | null;
   calc_is_run?: boolean | null;
   calc_is_sack?: boolean | null;
-  calc_is_int?: boolean | null;
-  calc_stop?: boolean | null;
+  calc_shotgun?: boolean | null;
+  calc_no_huddle?: boolean | null;
+  games: { season: number | null; week: number | null } | null;
+};
+
+type SpecialRow = {
+  team_id: string;
+  team_name: string | null;
+  season: number | null;
+  week: number | null;
+  plays: number;
+  punts: number;
+  kickoffs: number;
+  field_goals: number;
+  extra_points: number;
 };
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-
-  const teamId = searchParams.get("teamId"); // optional
   const auth = await getUserContextFromRequest(req);
   const { seasonInput, filters: parsedFilters } = parseCommonFilters(searchParams);
   const { filters, restricted, reason } = applyTierFilters(parsedFilters, auth.tier);
@@ -45,7 +55,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       ...baseResponse,
       season: seasonInput ? Number(seasonInput) : filters.season,
-      rows: [] as TeamDefenseRow[],
+      rows: [] as SpecialRow[],
       _meta: { restricted: true, reason: reason ?? "login-required" },
     });
   }
@@ -54,7 +64,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       ...baseResponse,
       season: seasonInput ? Number(seasonInput) : null,
-      rows: [] as TeamDefenseRow[],
+      rows: [] as SpecialRow[],
       _meta: {
         missingSupabaseEnv: true,
         ...(restricted ? { restricted: true, reason } : {}),
@@ -80,18 +90,18 @@ export async function GET(req: Request) {
       .from("nfl_plays")
       .select(
         `
-          defense_team,
-          result_yards,
-          calc_is_pass,
-          calc_is_run,
-          calc_is_sack,
-          calc_is_int,
-          calc_stop,
-          games!inner(season, week)
-        `
+        offense_team,
+        play_type,
+        calc_play_result,
+        calc_is_pass,
+        calc_is_run,
+        calc_is_sack,
+        calc_shotgun,
+        calc_no_huddle,
+        games!inner(season, week)
+      `
       );
 
-    if (teamId) query = query.eq("defense_team", teamId);
     if (resolvedSeason != null) query = query.eq("games.season", resolvedSeason);
     if (filters.week != null) query = query.eq("games.week", filters.week);
     if (filters.shotgun) query = query.eq("calc_shotgun", true);
@@ -101,11 +111,11 @@ export async function GET(req: Request) {
     const { data, error } = await query;
 
     if (error) {
-      console.error("advanced/defense db error:", error);
+      console.error("advanced/special db error:", error);
       return NextResponse.json({
         ...baseResponse,
         season: resolvedSeason,
-        rows: [] as TeamDefenseRow[],
+        rows: [] as SpecialRow[],
         _meta: {
           error: error.message,
           ...meta,
@@ -113,7 +123,7 @@ export async function GET(req: Request) {
       });
     }
 
-    const rows = aggregateDefense(data as any as Row[]);
+    const rows = aggregateSpecial(data as any as Row[]);
 
     return NextResponse.json({
       ...baseResponse,
@@ -122,11 +132,11 @@ export async function GET(req: Request) {
       ...(Object.keys(meta).length ? { _meta: meta } : {}),
     });
   } catch (err) {
-    console.error("advanced/defense GET error:", err);
+    console.error("advanced/special GET error:", err);
     return NextResponse.json({
       ...baseResponse,
       season: seasonInput ? Number(seasonInput) : null,
-      rows: [] as TeamDefenseRow[],
+      rows: [] as SpecialRow[],
       _meta: {
         error: String(err),
         ...(restricted ? { restricted: true, reason } : {}),
@@ -135,76 +145,51 @@ export async function GET(req: Request) {
   }
 }
 
-function aggregateDefense(data: Row[]): TeamDefenseRow[] {
-  const map = new Map<string, Row[]>();
+function aggregateSpecial(data: Row[]): SpecialRow[] {
+  const grouped = new Map<string, Row[]>();
   for (const row of data) {
-    const key = row.defense_team ?? "unknown";
-    if (!map.has(key)) map.set(key, []);
-    map.get(key)!.push(row);
+    const key = row.offense_team ?? "unknown";
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key)!.push(row);
   }
 
-  const result: TeamDefenseRow[] = [];
+  const results: SpecialRow[] = [];
 
-  for (const [teamId, rows] of map.entries()) {
+  for (const [teamId, rows] of grouped.entries()) {
+    const playTypeToLower = (value: string | null) =>
+      (value ?? "").toLowerCase();
+
     const plays = rows.length;
-    const pass_count = rows.filter((r) => r.calc_is_pass).length;
-    const run_count = rows.filter((r) => r.calc_is_run).length;
-    const sacks = rows.filter((r) => r.calc_is_sack).length;
-    const ints = rows.filter((r) => r.calc_is_int).length;
-    const stops = rows.filter((r) => r.calc_stop).length;
-    const explosive_allowed = rows.filter(
-      (r) => typeof r.result_yards === "number" && r.result_yards >= 20
+    const punts = rows.filter(
+      (r) =>
+        playTypeToLower(r.calc_play_result) === "punt" ||
+        playTypeToLower(r.play_type).includes("punt")
     ).length;
-    const yards_allowed = rows.reduce(
-      (sum, r) => sum + (r.result_yards ?? 0),
-      0
-    );
-
-    const dropbacks = pass_count + sacks;
-    const sack_rate = dropbacks > 0 ? sacks / dropbacks : 0;
-    const stop_rate = plays > 0 ? stops / plays : 0;
-    const pressure_proxy = sacks; // qb hits not available in schema; fallback to sacks only
+    const kickoffs = rows.filter(
+      (r) =>
+        playTypeToLower(r.calc_play_result) === "kick" ||
+        playTypeToLower(r.play_type).includes("kickoff")
+    ).length;
+    const field_goals = rows.filter((r) =>
+      playTypeToLower(r.play_type).includes("field goal")
+    ).length;
+    const extra_points = rows.filter((r) =>
+      playTypeToLower(r.play_type).includes("extra point")
+    ).length;
 
     const sample = rows[0];
-    result.push({
+    results.push({
       team_id: teamId,
       team_name: teamId,
-      season: sample.season ?? null,
-      games: null,
-      plays_defended: plays,
-      pass_plays_defended: pass_count,
-      run_plays_defended: run_count,
-      sacks_made: sacks,
-      yards_allowed,
-      pass_yards_allowed: null,
-      rush_yards_allowed: null,
-      yards_per_play_allowed: plays ? yards_allowed / plays : null,
-      pass_yards_per_game_allowed: null,
-      rush_yards_per_game_allowed: null,
-      third_down_att_def: null,
-      third_down_conv_def: null,
-      third_down_pct_def: null,
-      qb_hits: 0,
-      ints,
-      touchdowns_allowed: null,
-      stops,
-      explosive_allowed_pass: explosive_allowed,
-      explosive_allowed_run: 0,
-      pressure_proxy,
-      sack_rate,
-      stop_rate,
-    } as TeamDefenseRow & {
-      qb_hits: number;
-      ints: number;
-      touchdowns_allowed: number | null;
-      stops: number;
-      explosive_allowed_pass: number;
-      explosive_allowed_run: number;
-      pressure_proxy: number;
-      sack_rate: number;
-      stop_rate: number;
+      season: sample?.games?.season ?? null,
+      week: sample?.games?.week ?? null,
+      plays,
+      punts,
+      kickoffs,
+      field_goals,
+      extra_points,
     });
   }
 
-  return result;
+  return results;
 }

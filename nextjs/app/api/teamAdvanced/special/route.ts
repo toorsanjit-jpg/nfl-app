@@ -1,6 +1,13 @@
 // nextjs/app/api/teamAdvanced/special/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import {
+  applyPlayTypeFilter,
+  applyTierFilters,
+  parseCommonFilters,
+  resolveSeason,
+} from "@/lib/advancedFilters";
+import { getUserContextFromRequest } from "@/lib/auth";
 
 export type TeamSpecialGroupBy = "total" | "week" | "phase";
 
@@ -23,11 +30,28 @@ export type TeamAdvancedSpecialRow = {
   kick_return_yards?: number | null;
   punt_returns?: number | null;
   punt_return_yards?: number | null;
+  kickoff_plays?: number | null;
+  xp_att?: number | null;
+  st_plays_total?: number | null;
 };
 
 export type TeamAdvancedSpecialResponse = {
   groupBy: TeamSpecialGroupBy;
+  season: number | null;
+  week: number | null;
+  filters: {
+    playType: string;
+    shotgun: boolean;
+    noHuddle: boolean;
+  };
   rows: TeamAdvancedSpecialRow[];
+  _meta?: {
+    missingSupabaseEnv?: true;
+    error?: string;
+    seasonLookupError?: string;
+    restricted?: boolean;
+    reason?: string;
+  };
 };
 
 type Row = {
@@ -35,6 +59,11 @@ type Row = {
   defense_team: string;
   calc_play_result: string | null;
   play_type: string | null;
+  calc_is_pass?: boolean | null;
+  calc_is_run?: boolean | null;
+  calc_is_sack?: boolean | null;
+  calc_shotgun?: boolean | null;
+  calc_no_huddle?: boolean | null;
   games: { season: number | null; week: number | null } | null;
 };
 
@@ -57,22 +86,58 @@ export async function GET(req: Request) {
     ? (groupByRaw as TeamSpecialGroupBy)
     : "total";
 
+  const auth = await getUserContextFromRequest(req);
+  const { seasonInput, filters: parsedFilters } = parseCommonFilters(searchParams);
+  const { filters, restricted, reason } = applyTierFilters(parsedFilters, auth.tier);
+  const phase = searchParams.get("phase");
+
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !supabaseServiceKey) {
     return NextResponse.json({
       groupBy,
+      season: seasonInput ? Number(seasonInput) : null,
+      week: filters.week,
+      filters: {
+        playType: filters.playType,
+        shotgun: filters.shotgun,
+        noHuddle: filters.noHuddle,
+      },
       rows: [] as TeamAdvancedSpecialRow[],
       _meta: { missingSupabaseEnv: true },
     });
   }
 
+  if (auth.tier !== "premium") {
+    return NextResponse.json(
+      {
+        groupBy,
+        season: filters.season ?? (seasonInput ? Number(seasonInput) : null),
+        week: filters.week,
+        filters: {
+          playType: filters.playType,
+          shotgun: filters.shotgun,
+          noHuddle: filters.noHuddle,
+        },
+        rows: [] as TeamAdvancedSpecialRow[],
+        _meta: {
+          restricted: true,
+          reason: auth.userId ? "premium-required" : "login-required",
+        },
+      },
+      { status: auth.userId ? 403 : 401 }
+    );
+  }
+
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   try {
-    const season = searchParams.get("season");
-    const week = searchParams.get("week");
-    const phase = searchParams.get("phase");
+    const { season: resolvedSeason, metaError } = await resolveSeason(
+      supabase,
+      filters.season
+    );
+    const meta: Record<string, any> = {};
+    if (metaError) meta.seasonLookupError = metaError;
 
     let query = supabase
       .from("nfl_plays")
@@ -82,35 +147,68 @@ export async function GET(req: Request) {
         defense_team,
         calc_play_result,
         play_type,
+        calc_is_pass,
+        calc_is_run,
+        calc_is_sack,
+        calc_shotgun,
+        calc_no_huddle,
         games!inner(season, week)
       `
       )
       .or(`offense_team.eq.${teamId},defense_team.eq.${teamId}`);
 
-    if (season) query = query.eq("games.season", Number(season));
-    if (week) query = query.eq("games.week", Number(week));
+    if (resolvedSeason != null) query = query.eq("games.season", resolvedSeason);
+    if (filters.week != null) query = query.eq("games.week", filters.week);
+    if (filters.shotgun) query = query.eq("calc_shotgun", true);
+    if (filters.noHuddle) query = query.eq("calc_no_huddle", true);
     if (phase) query = query.eq("calc_play_result", phase);
+    query = applyPlayTypeFilter(query, filters.playType);
 
     const { data, error } = await query;
     if (error) {
       console.error("teamAdvanced/special error:", error);
       return NextResponse.json({
         groupBy,
-        rows: [] as TeamAdvancedSpecialRow[],
-        _meta: { error: error.message },
-      });
-    }
+        season: resolvedSeason ?? filters.season ?? (seasonInput ? Number(seasonInput) : null),
+        week: filters.week,
+        filters: {
+          playType: filters.playType,
+          shotgun: filters.shotgun,
+        noHuddle: filters.noHuddle,
+      },
+      rows: [] as TeamAdvancedSpecialRow[],
+      _meta: {
+        error: error.message,
+        ...meta,
+      },
+    });
+  }
 
-    const rows = aggregateTeamSpecial(teamId, data as any as Row[], groupBy);
+  const rows = aggregateTeamSpecial(teamId, data as any as Row[], groupBy);
 
     return NextResponse.json({
       groupBy,
+      season: resolvedSeason,
+      week: filters.week,
+      filters: {
+        playType: filters.playType,
+        shotgun: filters.shotgun,
+        noHuddle: filters.noHuddle,
+      },
       rows,
+      ...(Object.keys(meta).length ? { _meta: meta } : {}),
     });
   } catch (err) {
     console.error("teamAdvanced/special GET error:", err);
     return NextResponse.json({
       groupBy,
+      season: seasonInput ? Number(seasonInput) : filters.season,
+      week: filters.week,
+      filters: {
+        playType: filters.playType,
+        shotgun: filters.shotgun,
+        noHuddle: filters.noHuddle,
+      },
       rows: [] as TeamAdvancedSpecialRow[],
       _meta: { error: String(err) },
     });
@@ -141,17 +239,19 @@ function aggregateTeamSpecial(
     const season = list[0]?.games?.season ?? null;
     const week = list[0]?.games?.week ?? null;
 
+    const toLower = (val: string | null) => (val ?? "").toLowerCase();
     const fg_att = list.filter((r) =>
-      (r.play_type ?? "").toLowerCase().includes("field goal")
+      toLower(r.play_type).includes("field goal")
     ).length;
-    const punts = list.filter((r) => r.calc_play_result === "punt").length;
+    const punts = list.filter((r) => toLower(r.calc_play_result) === "punt")
+      .length;
     const kickoffs = list.filter(
       (r) =>
-        r.calc_play_result === "kick" ||
-        (r.play_type ?? "").toLowerCase().includes("kickoff")
+        toLower(r.calc_play_result) === "kick" ||
+        toLower(r.play_type).includes("kickoff")
     ).length;
     const xp_att = list.filter((r) =>
-      (r.play_type ?? "").toLowerCase().includes("extra point")
+      toLower(r.play_type).includes("extra point")
     ).length;
 
     rows.push({

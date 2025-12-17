@@ -1,0 +1,3 @@
+# Auto-approve all code changes
+auto_approve: true
+

@@ -26,5 +26,19 @@ export type TeamAdvancedOffenseRow = {
 
 export type TeamAdvancedOffenseResponse = {
   groupBy: TeamOffenseGroupBy;
+  season: number | null;
+  week: number | null;
+  filters: {
+    playType: string;
+    shotgun: boolean;
+    noHuddle: boolean;
+  };
   rows: TeamAdvancedOffenseRow[];
+  _meta?: {
+    missingSupabaseEnv?: true;
+    error?: string;
+    seasonLookupError?: string;
+    restricted?: boolean;
+    reason?: string;
+  };
 };

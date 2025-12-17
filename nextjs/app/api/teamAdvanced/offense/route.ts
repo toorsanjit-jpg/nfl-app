@@ -1,12 +1,18 @@
 // nextjs/app/api/teamAdvanced/offense/route.ts
 import { NextResponse } from "next/server";
-import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type {
   TeamAdvancedOffenseResponse,
   TeamOffenseGroupBy,
   TeamAdvancedOffenseRow,
 } from "@/types/TeamAdvancedOffense";
+import {
+  applyPlayTypeFilter,
+  applyTierFilters,
+  parseCommonFilters,
+  resolveSeason,
+} from "@/lib/advancedFilters";
+import { getUserContextFromRequest } from "@/lib/auth";
 
 type Row = {
   offense_team: string;
@@ -46,24 +52,57 @@ export async function GET(req: Request) {
     ? (groupByRaw as TeamOffenseGroupBy)
     : "total";
 
+  const auth = await getUserContextFromRequest(req);
+  const { seasonInput, filters: parsedFilters } = parseCommonFilters(searchParams);
+  const { filters, restricted, reason } = applyTierFilters(parsedFilters, auth.tier);
+
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !supabaseServiceKey) {
     return NextResponse.json({
       groupBy,
+      season: seasonInput ? Number(seasonInput) : null,
+      week: filters.week,
+      filters: {
+        playType: filters.playType,
+        shotgun: filters.shotgun,
+        noHuddle: filters.noHuddle,
+      },
       rows: [] as TeamAdvancedOffenseRow[],
       _meta: { missingSupabaseEnv: true },
     });
   }
 
+  if (auth.tier !== "premium") {
+    return NextResponse.json(
+      {
+        groupBy,
+        season: filters.season ?? (seasonInput ? Number(seasonInput) : null),
+        week: filters.week,
+        filters: {
+          playType: filters.playType,
+          shotgun: filters.shotgun,
+          noHuddle: filters.noHuddle,
+        },
+        rows: [] as TeamAdvancedOffenseRow[],
+        _meta: {
+          restricted: true,
+          reason: auth.userId ? "premium-required" : "login-required",
+        },
+      },
+      { status: auth.userId ? 403 : 401 }
+    );
+  }
+
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   try {
-    const season = searchParams.get("season");
-    const week = searchParams.get("week");
-    const playResult = searchParams.get("playResult");
-    const shotgun = searchParams.get("shotgun");
-    const noHuddle = searchParams.get("noHuddle");
+    const { season: resolvedSeason, metaError } = await resolveSeason(
+      supabase,
+      filters.season
+    );
+    const meta: Record<string, any> = {};
+    if (metaError) meta.seasonLookupError = metaError;
 
     let query = supabase
       .from("nfl_plays")
@@ -80,37 +119,61 @@ export async function GET(req: Request) {
         calc_first_down,
         games!inner(season, week)
       `
-      )
-      .eq("offense_team", teamId);
+      );
 
-    if (season) query = query.eq("games.season", Number(season));
-    if (week) query = query.eq("games.week", Number(week));
-    if (shotgun === "true") query = query.eq("calc_shotgun", true);
-    if (noHuddle === "true") query = query.eq("calc_no_huddle", true);
-    if (playResult === "pass") query = query.eq("calc_is_pass", true);
-    if (playResult === "run") query = query.eq("calc_is_run", true);
-    if (playResult === "sack") query = query.eq("calc_is_sack", true);
+    query = query.eq("offense_team", teamId);
+
+    if (resolvedSeason != null) query = query.eq("games.season", resolvedSeason);
+    if (filters.week != null) query = query.eq("games.week", filters.week);
+    if (filters.shotgun) query = query.eq("calc_shotgun", true);
+    if (filters.noHuddle) query = query.eq("calc_no_huddle", true);
+    query = applyPlayTypeFilter(query, filters.playType);
 
     const { data, error } = await query;
     if (error) {
       console.error("teamAdvanced/offense error:", error);
       return NextResponse.json({
         groupBy,
-        rows: [] as TeamAdvancedOffenseRow[],
-        _meta: { error: error.message },
-      });
-    }
+        season: resolvedSeason ?? filters.season ?? (seasonInput ? Number(seasonInput) : null),
+        week: filters.week,
+        filters: {
+          playType: filters.playType,
+        shotgun: filters.shotgun,
+        noHuddle: filters.noHuddle,
+      },
+      rows: [] as TeamAdvancedOffenseRow[],
+      _meta: {
+        error: error.message,
+        ...meta,
+      },
+    });
+  }
 
-    const rows = aggregateTeamOffense(data as any as Row[]);
+  const rows = aggregateTeamOffense(data as any as Row[]);
 
     return NextResponse.json({
       groupBy,
+      season: resolvedSeason,
+      week: filters.week,
+      filters: {
+        playType: filters.playType,
+        shotgun: filters.shotgun,
+        noHuddle: filters.noHuddle,
+      },
       rows,
+      ...(Object.keys(meta).length ? { _meta: meta } : {}),
     });
   } catch (err) {
     console.error("teamAdvanced/offense GET error:", err);
     return NextResponse.json({
       groupBy,
+      season: seasonInput ? Number(seasonInput) : filters.season,
+      week: filters.week,
+      filters: {
+        playType: filters.playType,
+        shotgun: filters.shotgun,
+        noHuddle: filters.noHuddle,
+      },
       rows: [] as TeamAdvancedOffenseRow[],
       _meta: { error: String(err) },
     });

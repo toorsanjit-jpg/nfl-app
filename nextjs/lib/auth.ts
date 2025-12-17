@@ -58,9 +58,9 @@ function getTokenFromRequest(req: Request): string | null {
   return extractTokenFromCookieHeader(req.headers.get("cookie"));
 }
 
-function getTokenFromCookiesStore(): string | null {
+async function getTokenFromCookiesStore(): Promise<string | null> {
   try {
-    const store = nextCookies();
+    const store = await nextCookies();
     return (
       store.get("sb-access-token")?.value ||
       store.get("supabase-auth-token")?.value ||
@@ -206,7 +206,7 @@ export async function getUserContextFromRequest(
 
 export async function getUserContextFromCookies(): Promise<UserContext> {
   const creds = getSupabaseCreds();
-  const token = getTokenFromCookiesStore();
+  const token = await getTokenFromCookiesStore();
   return resolveUserContext(token, creds);
 }
 

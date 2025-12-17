@@ -124,6 +124,12 @@ function toNum(value: any): number | null {
 // ----------------- Main handler -----------------
 
 export async function POST(request: Request) {
+  if (!supabaseAdmin) {
+    return NextResponse.json(
+      { error: "Missing Supabase admin credentials" },
+      { status: 500 }
+    );
+  }
   try {
     const body = await request.json();
     const { gameId } = body;

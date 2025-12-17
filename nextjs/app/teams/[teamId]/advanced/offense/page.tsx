@@ -24,6 +24,14 @@ type PageProps = {
 
 type SupabaseClient = ReturnType<typeof createClient> | null;
 
+function normalizeGroupBy(raw?: string | TeamOffenseGroupBy): TeamOffenseGroupBy {
+  const allowed: TeamOffenseGroupBy[] = ["total", "week", "quarter", "qb", "rb"];
+  if (!raw) return "total";
+  return allowed.includes(raw as TeamOffenseGroupBy)
+    ? (raw as TeamOffenseGroupBy)
+    : "total";
+}
+
 function getSupabase(): SupabaseClient {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -44,7 +52,7 @@ async function getLatestSelection(
     .order("season", { ascending: false })
     .order("week", { ascending: false })
     .limit(1)
-    .maybeSingle();
+    .maybeSingle<{ season: number | null; week: number | null }>();
   return { season: data?.season ?? null, week: data?.week ?? null };
 }
 
@@ -84,7 +92,7 @@ async function fetchSummary(
     console.error("team_advanced_offense fetch error:", error);
     return null;
   }
-  return (data as TeamAdvancedOffenseSummary) ?? null;
+  return (data as TeamAdvancedOffenseSummary | null) ?? null;
 }
 
 async function fetchGrouped(
@@ -173,6 +181,10 @@ export default async function TeamAdvancedOffensePage({
   }
 
   const basePath = `/teams/${encodeURIComponent(teamId)}/advanced/offense`;
+  const yardsPerPlay =
+    summary && typeof summary?.plays_offense === "number" && summary.plays_offense > 0
+      ? (summary.yards_gained_sum ?? 0) / summary.plays_offense
+      : null;
 
   const headlineStats = [
     {
@@ -189,10 +201,7 @@ export default async function TeamAdvancedOffensePage({
     },
     {
       label: "Yds/Play",
-      value:
-        typeof summary?.yards_per_play === "number"
-          ? summary.yards_per_play.toFixed(2)
-          : "0.00",
+      value: typeof yardsPerPlay === "number" ? yardsPerPlay.toFixed(2) : "0.00",
     },
     {
       label: "Success Rate",

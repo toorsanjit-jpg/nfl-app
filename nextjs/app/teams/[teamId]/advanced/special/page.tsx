@@ -45,7 +45,7 @@ async function getLatestSelection(
     .order("season", { ascending: false })
     .order("week", { ascending: false })
     .limit(1)
-    .maybeSingle();
+    .maybeSingle<{ season: number | null; week: number | null }>();
   return { season: data?.season ?? null, week: data?.week ?? null };
 }
 
@@ -85,7 +85,7 @@ async function fetchSummary(
     console.error("team_advanced_special_teams fetch error:", error);
     return null;
   }
-  return (data as TeamAdvancedSpecialSummary) ?? null;
+  return (data as TeamAdvancedSpecialSummary | null) ?? null;
 }
 
 async function fetchGrouped(

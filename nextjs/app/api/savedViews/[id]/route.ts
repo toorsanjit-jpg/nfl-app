@@ -1,13 +1,13 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getUserContextFromRequest } from "@/lib/auth";
 
 export async function DELETE(
-  req: Request,
-  { params }: { params: { id: string } }
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await getUserContextFromRequest(req);
-  const viewId = params.id;
+  const { id } = await params;
 
   if (auth.missingSupabaseEnv) {
     return NextResponse.json({
@@ -43,7 +43,7 @@ export async function DELETE(
   const { error } = await supabase
     .from("saved_views")
     .delete()
-    .eq("id", viewId)
+    .eq("id", id)
     .eq("user_id", auth.userId);
 
   if (error) {

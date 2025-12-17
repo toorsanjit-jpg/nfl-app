@@ -44,7 +44,7 @@ async function getLatestSelection(
     .order("season", { ascending: false })
     .order("week", { ascending: false })
     .limit(1)
-    .maybeSingle();
+    .maybeSingle<{ season: number | null; week: number | null }>();
   return { season: data?.season ?? null, week: data?.week ?? null };
 }
 
@@ -84,7 +84,7 @@ async function fetchSummary(
     console.error("team_advanced_defense fetch error:", error);
     return null;
   }
-  return (data as TeamAdvancedDefenseSummary) ?? null;
+  return (data as TeamAdvancedDefenseSummary | null) ?? null;
 }
 
 async function fetchGrouped(
@@ -351,8 +351,7 @@ export default async function TeamAdvancedDefensePage({
                             : "0.00"}
                         </TableCell>
                         <TableCell className="text-right">
-                          {(row.explosive_allowed_pass ?? 0) +
-                            (row.explosive_allowed_run ?? 0)}
+                          {row.explosives_allowed ?? 0}
                         </TableCell>
                       </TableRow>
                     );

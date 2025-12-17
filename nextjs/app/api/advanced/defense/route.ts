@@ -10,6 +10,7 @@ import {
 import { getUserContextFromRequest } from "@/lib/auth";
 
 type Row = TeamDefenseRow & {
+  defense_team?: string | null;
   season: number | null;
   week?: number | null;
   result_yards?: number | null;

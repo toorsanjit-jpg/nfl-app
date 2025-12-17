@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getUserContextFromRequest } from "@/lib/auth";
 
@@ -23,12 +23,13 @@ function requireAdmin(auth: any) {
 }
 
 export async function DELETE(
-  req: Request,
-  { params }: { params: { filter: string } }
+  req: NextRequest,
+  { params }: { params: Promise<{ filter: string }> }
 ) {
   const auth = await getUserContextFromRequest(req);
   const gate = requireAdmin(auth);
   if (gate) return gate;
+  const { filter } = await params;
 
   const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -38,7 +39,7 @@ export async function DELETE(
   const { error } = await supabase
     .from("admin_filters")
     .delete()
-    .eq("filter_key", params.filter);
+    .eq("filter_key", filter);
 
   if (error) {
     return NextResponse.json({ deleted: false, _meta: { error: error.message } }, { status: 500 });

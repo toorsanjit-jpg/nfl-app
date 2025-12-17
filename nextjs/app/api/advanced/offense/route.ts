@@ -9,7 +9,20 @@ import {
 } from "@/lib/advancedFilters";
 import { getUserContextFromRequest } from "@/lib/auth";
 
-type Row = TeamOffenseRow & { season: number | null; week?: number | null };
+type Row = TeamOffenseRow & {
+  season: number | null;
+  week?: number | null;
+  offense_team?: string | null;
+  result_yards?: number | null;
+  calc_is_pass?: boolean | null;
+  calc_is_run?: boolean | null;
+  calc_is_sack?: boolean | null;
+  calc_is_scramble?: boolean | null;
+  calc_shotgun?: boolean | null;
+  calc_no_huddle?: boolean | null;
+  calc_first_down?: boolean | null;
+};
+type RowWithTeam = Row & { offense_team?: string | null };
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -109,7 +122,7 @@ export async function GET(req: Request) {
       });
     }
 
-    const rows = aggregateOffense(data as any as Row[]);
+    const rows = aggregateOffense(data as any as RowWithTeam[]);
 
     return NextResponse.json({
       ...baseResponse,
@@ -131,8 +144,8 @@ export async function GET(req: Request) {
   }
 }
 
-function aggregateOffense(data: Row[]): TeamOffenseRow[] {
-  const map = new Map<string, Row[]>();
+function aggregateOffense(data: RowWithTeam[]): TeamOffenseRow[] {
+  const map = new Map<string, RowWithTeam[]>();
   for (const row of data) {
     const key = row.offense_team ?? "unknown";
     if (!map.has(key)) map.set(key, []);

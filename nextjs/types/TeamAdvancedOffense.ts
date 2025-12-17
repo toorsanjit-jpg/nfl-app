@@ -13,6 +13,7 @@ export type TeamAdvancedOffenseRow = {
   plays: number | null;
   pass_plays: number | null;
   run_plays: number | null;
+  sacks_taken?: number | null;
 
   total_yards: number | null;
   pass_yards: number | null;
@@ -22,6 +23,12 @@ export type TeamAdvancedOffenseRow = {
   // These are placeholders for future advanced metrics
   success_rate?: number | null;
   epa_per_play?: number | null;
+  dropbacks?: number | null;
+  rush_attempts?: number | null;
+  shotgun_rate?: number | null;
+  no_huddle_rate?: number | null;
+  sack_rate?: number | null;
+  scramble_rate?: number | null;
 };
 
 export type TeamAdvancedOffenseResponse = {

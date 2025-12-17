@@ -1,16 +1,32 @@
-import { cookies } from "next/headers";
-import {
-  createRouteHandlerClient,
-  createServerComponentClient,
-} from "@supabase/auth-helpers-nextjs";
+import { createServerClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { cookies } from "next/headers";
 
-type SupabaseEnv = {
-  url: string | null;
-  anonKey: string | null;
-};
+export function createServerSupabase(): SupabaseClient {
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          const store = cookies() as any;
+          return store.get?.(name)?.value;
+        },
+        set(name: string, value: string, options: any) {
+          const store = cookies() as any;
+          store.set?.({ name, value, ...options });
+        },
+        remove(name: string, options: any) {
+          const store = cookies() as any;
+          store.set?.({ name, value: "", ...options });
+        },
+      },
+    }
+  );
+}
 
-export function getSupabaseEnv(): SupabaseEnv {
+// Legacy helpers that now delegate to the SSR client
+export function getSupabaseEnv() {
   return {
     url: process.env.NEXT_PUBLIC_SUPABASE_URL || null,
     anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || null,
@@ -22,26 +38,12 @@ export function hasSupabaseEnv() {
   return Boolean(url && anonKey);
 }
 
-export function createServerSupabase(): SupabaseClient | null {
-  const { url, anonKey } = getSupabaseEnv();
-  if (!url || !anonKey) return null;
-
-  // Pass the cookies() function directly so auth-helpers can manage reads/writes.
-  return createServerComponentClient<any>({ cookies }) as SupabaseClient;
+export function getSupabaseServerClient(): SupabaseClient | null {
+  if (!hasSupabaseEnv()) return null;
+  return createServerSupabase();
 }
 
 export function createRouteSupabase(): SupabaseClient | null {
-  const { url, anonKey } = getSupabaseEnv();
-  if (!url || !anonKey) return null;
-  try {
-    return createRouteHandlerClient<any>({
-      cookies,
-    }) as SupabaseClient;
-  } catch {
-    return null;
-  }
-}
-
-export function getSupabaseServerClient(): SupabaseClient | null {
+  if (!hasSupabaseEnv()) return null;
   return createServerSupabase();
 }

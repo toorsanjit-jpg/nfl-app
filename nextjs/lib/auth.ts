@@ -6,6 +6,7 @@ export type UserContext = {
   user: User | null;
   userId: string | null;
   isPremium: boolean;
+  isAdmin: boolean;
   tier: UserTier;
   token: string | null;
   missingSupabaseEnv?: boolean;
@@ -15,6 +16,7 @@ const DEFAULT_CONTEXT: UserContext = {
   user: null,
   userId: null,
   isPremium: false,
+  isAdmin: false,
   tier: "anonymous",
   token: null,
 };
@@ -112,6 +114,27 @@ async function fetchProfileIsPremium(
   }
 }
 
+async function fetchProfileIsAdmin(
+  client: SupabaseClient,
+  userId: string
+): Promise<boolean | null> {
+  try {
+    const { data, error } = await client
+      .from("profiles")
+      .select("is_admin")
+      .eq("id", userId)
+      .maybeSingle();
+    if (error) {
+      console.warn("profile admin lookup error:", error.message);
+      return null;
+    }
+    return data?.is_admin ?? null;
+  } catch (err) {
+    console.warn("profile admin lookup exception:", err);
+    return null;
+  }
+}
+
 async function resolveUserContext(
   token: string | null,
   creds: SupabaseCreds
@@ -144,20 +167,30 @@ async function resolveUserContext(
       (user.app_metadata as any)?.is_premium ??
         (user.user_metadata as any)?.is_premium
     );
+  let isAdmin =
+    Boolean(
+      (user.app_metadata as any)?.is_admin ??
+        (user.user_metadata as any)?.is_admin
+    );
 
   if (creds.serviceKey) {
     const adminClient = buildClient(creds.url, creds.serviceKey, token);
     const profilePremium = await fetchProfileIsPremium(adminClient, userId);
+    const profileAdmin = await fetchProfileIsAdmin(adminClient, userId);
     if (profilePremium != null) isPremium = profilePremium;
+    if (profileAdmin != null) isAdmin = profileAdmin;
   } else {
     const profilePremium = await fetchProfileIsPremium(supabase, userId);
+    const profileAdmin = await fetchProfileIsAdmin(supabase, userId);
     if (profilePremium != null) isPremium = profilePremium;
+    if (profileAdmin != null) isAdmin = profileAdmin;
   }
 
   return {
     user,
     userId,
     isPremium,
+    isAdmin,
     tier: deriveTier(user, isPremium),
     token,
   };
@@ -182,6 +215,7 @@ export function getAdvancedPermissions(ctx: UserContext) {
   const canUseSavedViews = ctx.isPremium;
   const canUseFullFilters = ctx.isPremium;
   const canAccessTeamAdvanced = ctx.isPremium;
+  const isAdmin = ctx.isAdmin && ctx.isPremium;
 
   return {
     ...ctx,
@@ -189,5 +223,6 @@ export function getAdvancedPermissions(ctx: UserContext) {
     canUseSavedViews,
     canUseFullFilters,
     canAccessTeamAdvanced,
+    isAdmin,
   };
 }

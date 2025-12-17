@@ -20,6 +20,9 @@ export const metadata: Metadata = {
   description: "NFL Data + Stats App",
 };
 
+// Force dynamic rendering so Supabase cookies/session access never triggers static-generation errors.
+export const dynamic = "force-dynamic";
+
 export default async function RootLayout({
   children,
 }: Readonly<{

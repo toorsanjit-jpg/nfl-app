@@ -49,6 +49,10 @@ export default async function AdminHome() {
       </p>
       <div className="grid gap-3 md:grid-cols-2">
         {[
+          { href: "/admin/schema", label: "Schema Builder", desc: "Configure admin-defined tables" },
+          { href: "/admin/views", label: "Saved Views", desc: "Admin saved views" },
+          { href: "/admin/import", label: "Import Game", desc: "Manual import (placeholder)" },
+          { href: "/admin/premium-users", label: "Premium Users", desc: "Manage premium users (placeholder)" },
           { href: "/admin/fields", label: "Fields", desc: "Visibility, labels, filterability" },
           { href: "/admin/tables", label: "Tables", desc: "Table groupings and defaults" },
           { href: "/admin/table-fields", label: "Table Fields", desc: "Assign fields to tables" },

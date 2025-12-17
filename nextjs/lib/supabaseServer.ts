@@ -26,10 +26,8 @@ export function createServerSupabase(): SupabaseClient | null {
   const { url, anonKey } = getSupabaseEnv();
   if (!url || !anonKey) return null;
 
-  const cookieStore = cookies();
-  return createServerComponentClient<any>({
-    cookies: () => cookieStore,
-  }) as SupabaseClient;
+  // Pass the cookies() function directly so auth-helpers can manage reads/writes.
+  return createServerComponentClient<any>({ cookies }) as SupabaseClient;
 }
 
 export function createRouteSupabase(): SupabaseClient | null {

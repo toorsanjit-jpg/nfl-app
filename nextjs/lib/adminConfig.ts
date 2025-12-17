@@ -53,7 +53,7 @@ export async function loadAdminConfig(): Promise<AdminConfig> {
 
 export async function assertAdminAccess() {
   const ctx = await getUserContextFromCookies();
-  if (!ctx.isAdmin || !ctx.isPremium) {
+  if (!ctx.isAdmin) {
     const err: any = new Error("Forbidden");
     err.statusCode = ctx.user ? 403 : 401;
     throw err;

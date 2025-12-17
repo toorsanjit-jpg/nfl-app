@@ -13,8 +13,6 @@ export type UserContext = {
   missingSupabaseEnv?: boolean;
 };
 
-const ADMIN_EMAIL = "toorsanjit@gmail.com";
-
 const DEFAULT_CONTEXT: UserContext = {
   user: null,
   userId: null,
@@ -29,20 +27,19 @@ type ProfileFlags = {
   isPremium: boolean | null;
 };
 
+function adminFromUser(user: User | null, profileIsAdmin?: boolean | null) {
+  if (!user) return false;
+  if (profileIsAdmin != null) return Boolean(profileIsAdmin);
+  const meta = (user.user_metadata || {}) as Record<string, any>;
+  const appMeta = (user.app_metadata || {}) as Record<string, any>;
+  if (meta.is_admin != null) return Boolean(meta.is_admin);
+  if (appMeta.is_admin != null) return Boolean(appMeta.is_admin);
+  return false;
+}
+
 function deriveTier(user: User | null, isPremium: boolean): UserTier {
   if (!user) return "anonymous";
   return isPremium ? "premium" : "free";
-}
-
-function adminFromMetadata(user: User | null, profileIsAdmin?: boolean | null) {
-  if (!user) return false;
-  if (user.email?.toLowerCase() === ADMIN_EMAIL) return true;
-  const meta = (user.user_metadata || {}) as Record<string, any>;
-  const appMeta = (user.app_metadata || {}) as Record<string, any>;
-  if (meta.is_admin === true || meta.is_admin === "true") return true;
-  if (appMeta.is_admin === true || appMeta.is_admin === "true") return true;
-  if (profileIsAdmin != null) return Boolean(profileIsAdmin);
-  return false;
 }
 
 function premiumFromMetadata(
@@ -105,7 +102,7 @@ async function buildContextFromClient(
     profileFlags = await fetchProfileFlags(profileClient, userId);
   }
 
-  const isAdmin = adminFromMetadata(user, profileFlags.isAdmin);
+  const isAdmin = adminFromUser(user, profileFlags.isAdmin);
   const isPremium = premiumFromMetadata(user, profileFlags.isPremium);
   const tier = deriveTier(user, isPremium);
 
@@ -151,8 +148,17 @@ export function getAdvancedPermissions(ctx: UserContext) {
   };
 }
 
-export function isAdminUser(user: User | null) {
-  return adminFromMetadata(user);
+export async function isAdminUser(user: User | null) {
+  if (!user) return false;
+  const adminClient = getSupabaseAdminClient();
+  if (!adminClient) return false;
+  const { data, error } = await adminClient
+    .from("profiles")
+    .select("is_admin")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (error) return false;
+  return Boolean((data as any)?.is_admin);
 }
 
 export async function requireAdmin() {

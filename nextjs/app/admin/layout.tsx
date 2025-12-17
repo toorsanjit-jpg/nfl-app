@@ -53,6 +53,7 @@ export default async function AdminLayout({
               { href: "/admin/tables", label: "Tables" },
               { href: "/admin/fields", label: "Fields" },
               { href: "/admin/filters", label: "Filters" },
+              { href: "/admin/users", label: "Users" },
             ].map((item) => (
               <Link
                 key={item.href}

@@ -34,7 +34,7 @@ export async function GET(req: Request) {
     );
   }
 
-  if (!auth.isPremium) {
+  if (!auth.isPremium && !auth.isAdmin) {
     return NextResponse.json(
       { views: [] as SavedView[], _meta: { restricted: true, reason: "premium-required" } },
       { status: 403 }
@@ -84,7 +84,7 @@ export async function POST(req: Request) {
     );
   }
 
-  if (!auth.isPremium) {
+  if (!auth.isPremium && !auth.isAdmin) {
     return NextResponse.json(
       { saved: null, _meta: { restricted: true, reason: "premium-required" } },
       { status: 403 }
@@ -131,7 +131,7 @@ export async function POST(req: Request) {
       });
     }
 
-    if (!existing || existing.user_id !== auth.userId) {
+    if (!existing || (existing.user_id !== auth.userId && !auth.isAdmin)) {
       return NextResponse.json(
         { saved: null, _meta: { restricted: true, reason: "not-owner" } },
         { status: 403 }

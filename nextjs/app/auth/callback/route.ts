@@ -19,7 +19,8 @@ export async function GET(request: NextRequest) {
   await supabase.auth.exchangeCodeForSession(code);
   const { data } = await supabase.auth.getUser();
   const user = data.user;
-  const destination = user && isAdminUser(user) ? "/admin" : next;
+  const isAdmin = user ? await isAdminUser(user) : false;
+  const destination = isAdmin ? "/admin" : next;
 
   return NextResponse.redirect(new URL(destination, requestUrl.origin));
 }

@@ -14,11 +14,16 @@ export type AdminField = {
 
 export type AdminTable = {
   table_key: string;
+  name: string;
+  source_table: string;
+  page: string;
+  access_level: "public" | "premium" | "admin";
   title: string;
   description?: string | null;
   is_enabled: boolean;
   default_sort_field?: string | null;
   default_sort_dir?: "asc" | "desc" | null;
+  row_limit?: number | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -53,4 +58,12 @@ export type AdminFilter = {
   ui_type: "toggle" | "dropdown" | "multiselect";
   created_at?: string;
   updated_at?: string;
+};
+
+export type AdminUser = {
+  id: string;
+  email: string | null;
+  is_admin: boolean;
+  is_premium: boolean;
+  created_at?: string | null;
 };

@@ -10,3 +10,11 @@ export function getSupabaseAdminClient(): SupabaseClient | null {
     return null;
   }
 }
+
+export function getSupabaseAdminClientOrThrow(): SupabaseClient {
+  const client = getSupabaseAdminClient();
+  if (!client) {
+    throw new Error("Missing Supabase service role credentials");
+  }
+  return client;
+}

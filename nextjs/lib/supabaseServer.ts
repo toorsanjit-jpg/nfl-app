@@ -2,11 +2,13 @@ import { createServerClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
-export function createServerSupabase(): SupabaseClient {
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
+export function createServerSupabase(): SupabaseClient | null {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseAnonKey) return null;
+
+  try {
+    return createServerClient(supabaseUrl, supabaseAnonKey, {
       cookies: {
         get(name: string) {
           const store = cookies() as any;
@@ -21,8 +23,11 @@ export function createServerSupabase(): SupabaseClient {
           store.set?.({ name, value: "", ...options });
         },
       },
-    }
-  );
+    });
+  } catch (error) {
+    console.warn("Failed to create server Supabase client:", error);
+    return null;
+  }
 }
 
 // Legacy helpers that now delegate to the SSR client

@@ -29,10 +29,11 @@ export async function GET(req: Request) {
 
   const teamId = searchParams.get("teamId"); // optional filter
   const auth = await getUserContextFromRequest(req);
+  const effectiveTier = auth.isAdmin ? "premium" : auth.tier;
   const { seasonInput, filters: parsedFilters } = parseCommonFilters(searchParams);
   const { filters, restricted, reason } = applyTierFilters(
     parsedFilters,
-    auth.tier
+    effectiveTier
   );
 
   const supabaseUrl = process.env.SUPABASE_URL;
@@ -48,7 +49,7 @@ export async function GET(req: Request) {
     },
   };
 
-  if (auth.tier === "anonymous") {
+  if (effectiveTier === "anonymous") {
     return NextResponse.json({
       ...baseResponse,
       season: seasonInput ? Number(seasonInput) : filters.season,

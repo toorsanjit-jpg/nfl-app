@@ -87,8 +87,9 @@ export async function GET(req: Request) {
     : "total";
 
   const auth = await getUserContextFromRequest(req);
+  const effectiveTier = auth.isAdmin ? "premium" : auth.tier;
   const { seasonInput, filters: parsedFilters } = parseCommonFilters(searchParams);
-  const { filters, restricted, reason } = applyTierFilters(parsedFilters, auth.tier);
+  const { filters, restricted, reason } = applyTierFilters(parsedFilters, effectiveTier);
 
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -107,7 +108,7 @@ export async function GET(req: Request) {
     });
   }
 
-  if (auth.tier !== "premium") {
+  if (effectiveTier !== "premium") {
     return NextResponse.json(
       {
         groupBy,

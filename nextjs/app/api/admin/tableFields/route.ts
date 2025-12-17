@@ -1,38 +1,12 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { getUserContextFromRequest } from "@/lib/auth";
 import type { AdminTableField } from "@/types/admin";
-
-function missingEnv(body: Record<string, any>) {
-  return NextResponse.json({ ...body, _meta: { missingSupabaseEnv: true } });
-}
-
-function requireAdmin(auth: any) {
-  if (!auth.userId) {
-    return NextResponse.json(
-      { _meta: { restricted: true, reason: "login-required" } },
-      { status: 401 }
-    );
-  }
-  if (!auth.isAdmin || !auth.isPremium) {
-    return NextResponse.json(
-      { _meta: { restricted: true, reason: "admin-required" } },
-      { status: 403 }
-    );
-  }
-  return null;
-}
+import { requireAdminApi } from "@/lib/adminApi";
 
 export async function GET(req: Request) {
-  const auth = await getUserContextFromRequest(req);
-  const gate = requireAdmin(auth);
-  if (gate) return gate;
+  const adminCheck = await requireAdminApi(req);
+  if ("response" in adminCheck) return adminCheck.response;
 
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !serviceKey) return missingEnv({ tableFields: [] as AdminTableField[] });
-
-  const supabase = createClient(supabaseUrl, serviceKey);
+  const supabase = adminCheck.client;
   const { data, error } = await supabase
     .from("admin_table_fields")
     .select("*")
@@ -47,13 +21,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const auth = await getUserContextFromRequest(req);
-  const gate = requireAdmin(auth);
-  if (gate) return gate;
-
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !serviceKey) return missingEnv({ saved: null });
+  const adminCheck = await requireAdminApi(req);
+  if ("response" in adminCheck) return adminCheck.response;
 
   const body = (await req.json()) as Partial<AdminTableField>;
   if (!body.table_key || !body.field_name) {
@@ -63,7 +32,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const supabase = createClient(supabaseUrl, serviceKey);
+  const supabase = adminCheck.client;
   const payload = {
     table_key: body.table_key,
     field_name: body.field_name,

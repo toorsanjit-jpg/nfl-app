@@ -23,7 +23,7 @@ export async function DELETE(
     );
   }
 
-  if (!auth.isPremium) {
+  if (!auth.isPremium && !auth.isAdmin) {
     return NextResponse.json(
       { deleted: false, _meta: { restricted: true, reason: "premium-required" } },
       { status: 403 }
@@ -40,11 +40,12 @@ export async function DELETE(
   }
 
   const supabase = createClient(supabaseUrl, serviceKey);
-  const { error } = await supabase
-    .from("saved_views")
-    .delete()
-    .eq("id", id)
-    .eq("user_id", auth.userId);
+  const query = supabase.from("saved_views").delete().eq("id", id);
+  if (!auth.isAdmin) {
+    query.eq("user_id", auth.userId);
+  }
+
+  const { error } = await query;
 
   if (error) {
     console.error("savedViews DELETE error:", error);

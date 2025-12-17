@@ -15,7 +15,8 @@ export default async function LoginPage() {
   const user = session?.user ?? null;
 
   if (user) {
-    redirect(isAdminUser(user) ? "/admin" : "/");
+    const isAdmin = await isAdminUser(user);
+    redirect(isAdmin ? "/admin" : "/");
   }
 
   const missingEnv =
